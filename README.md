@@ -111,6 +111,17 @@ k-dense-byok/
 
 BYOK stands for **Bring Your Own Keys**. Instead of paying a subscription to a single AI company, you plug in API keys from whatever providers you prefer. You stay in control of which models you use, how much you spend, and where your data goes.
 
+## Features in the works
+
+- Ollama local model support
+- Better utilization of Skills
+- Choose what model to use with Gemini CLI
+- Choice between Claude Code or Gemini CLI as the delegation expert
+- Support of MCP config in the UI (can be done in the code right now but we want to make it easier)
+- Better UI experience tailored to scientific workflows
+- Faster PDF parsing
+- And much more
+
 ## Want more?
 
 K-Dense BYOK is great for getting started, but if you want end-to-end research workflows with managed infrastructure, team collaboration, and no setup required, check out **[K-Dense Web](https://www.k-dense.ai)** — our full platform built for professional and academic research teams.
