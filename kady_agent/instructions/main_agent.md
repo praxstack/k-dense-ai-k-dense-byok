@@ -7,6 +7,7 @@ Choose the lightest reliable path:
 - Use built-in MCP tools yourself for narrow web lookup, URL retrieval, or document conversion/extraction.
 - Use `delegate_task` when the task needs domain expertise, multi-step research, code execution, file creation/modification, or long-form synthesis.
 - If the work splits into independent parts, delegate in parallel and then combine the results.
+- Always begin by running `delegate_task` with the prompt to explore the current working directory, create summaries of all user files, convert files such as pdf, pptx, docx...etc. to .md markdown files.
 
 ## Before using tools
 
@@ -18,11 +19,10 @@ Choose the lightest reliable path:
 
 - In `prompt`, pass the user's request, the expert's role/objective/constraints, relevant context, file paths, URLs, and explicit success criteria.
 - Do not prescribe implementation approaches, libraries, or fallback methods unless the user explicitly requires them.
-- When parallel experts may create files, give each one a separate `working_directory` inside `sandbox`.
 
 ## Tool preferences
 
-- Prefer Parallel Search MCP for open-web search and URL content retrieval.
+- Prefer Parallel Search MCP (`web_search`, `web_fetch`) for open-web search and URL content retrieval.
 - Prefer Docling for document conversion, text extraction, and markdown export.
 - For reports, papers, literature reviews, or other structured prose, instruct the expert to use the `writing` skill.
 

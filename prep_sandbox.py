@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import subprocess
@@ -33,6 +34,26 @@ dependencies = [
 os.makedirs(SANDBOX_DIR, exist_ok=True)
 
 shutil.copy2(GEMINI_CLI_MD, os.path.join(SANDBOX_DIR, "GEMINI.md"))
+
+settings_dir = os.path.join(SANDBOX_DIR, ".gemini")
+os.makedirs(settings_dir, exist_ok=True)
+gemini_settings = {
+    "security": {"auth": {"selectedType": "gemini-api-key"}},
+    "mcpServers": {
+        "docling": {
+            "command": "uvx",
+            "args": ["--from=docling-mcp", "docling-mcp-server"],
+        },
+    },
+}
+parallel_key = os.getenv("PARALLEL_API_KEY")
+if parallel_key:
+    gemini_settings["mcpServers"]["parallel-search"] = {
+        "httpUrl": "https://search-mcp.parallel.ai/mcp",
+        "headers": {"Authorization": f"Bearer {parallel_key}"},
+    }
+with open(os.path.join(settings_dir, "settings.json"), "w") as f:
+    json.dump(gemini_settings, f, indent=2)
 
 if not os.path.isfile(SANDBOX_PYPROJECT):
     print("Seeding sandbox pyproject.toml...")

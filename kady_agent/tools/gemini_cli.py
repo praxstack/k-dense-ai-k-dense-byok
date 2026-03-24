@@ -16,10 +16,6 @@ _CLI_OPENROUTER_HEADERS = (
     "X-Title: Kady-Expert, HTTP-Referer: https://www.k-dense.ai"
 )
 
-_GEMINI_CLI_SETTINGS = {
-    "security": {"auth": {"selectedType": "gemini-api-key"}},
-}
-
 
 def _parse_stream_json(raw: str) -> dict:
     """Parse Gemini CLI stream-json (JSONL) output into a structured result.
@@ -99,10 +95,6 @@ async def delegate_task(
         cwd = REPO_ROOT / cwd
 
     cwd.mkdir(parents=True, exist_ok=True)
-
-    settings_path = cwd / ".gemini" / "settings.json"
-    settings_path.parent.mkdir(parents=True, exist_ok=True)
-    settings_path.write_text(json.dumps(_GEMINI_CLI_SETTINGS), encoding="utf-8")
 
     sandbox_venv = cwd / ".venv"
     if sandbox_venv.is_dir():
