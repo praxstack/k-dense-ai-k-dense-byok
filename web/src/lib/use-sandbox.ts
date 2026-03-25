@@ -258,6 +258,73 @@ export function useSandbox(isActive = false) {
     a.remove();
   }, []);
 
+  const moveItem = useCallback(
+    async (src: string, dest: string): Promise<boolean> => {
+      try {
+        const res = await fetch(`${API_BASE}/sandbox/move`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ src, dest }),
+        });
+        if (!res.ok) return false;
+
+        // Remap any open tabs whose paths were under the old location
+        const current = tabsRef.current;
+        const updated = current.map((t) => {
+          if (t.path === src) return { ...t, path: dest };
+          if (t.path.startsWith(src + "/"))
+            return { ...t, path: dest + t.path.slice(src.length) };
+          return t;
+        });
+        const pathsChanged = updated.some((t, i) => t.path !== current[i].path);
+        if (pathsChanged) {
+          tabsRef.current = updated;
+          openPathsRef.current = new Set(updated.map((t) => t.path));
+          setTabs(updated);
+          setActiveTabPath((prev) => {
+            if (prev === src) return dest;
+            if (prev && prev.startsWith(src + "/"))
+              return dest + prev.slice(src.length);
+            return prev;
+          });
+        }
+
+        await fetchTree();
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [fetchTree]
+  );
+
+  const renameItem = useCallback(
+    async (oldPath: string, newName: string): Promise<boolean> => {
+      const parent = oldPath.includes("/") ? oldPath.slice(0, oldPath.lastIndexOf("/")) : "";
+      const dest = parent ? `${parent}/${newName}` : newName;
+      return moveItem(oldPath, dest);
+    },
+    [moveItem]
+  );
+
+  const createDir = useCallback(
+    async (path: string): Promise<boolean> => {
+      try {
+        const res = await fetch(`${API_BASE}/sandbox/mkdir`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path }),
+        });
+        if (!res.ok) return false;
+        await fetchTree();
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [fetchTree]
+  );
+
   const refreshOpenTabs = useCallback(async () => {
     const current = tabsRef.current;
     for (const tab of current) {
@@ -310,6 +377,9 @@ export function useSandbox(isActive = false) {
     downloadFile,
     downloadDir,
     downloadAll,
+    moveItem,
+    renameItem,
+    createDir,
     refreshOpenTabs,
   };
 }

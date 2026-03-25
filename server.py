@@ -7,7 +7,7 @@ import zipfile
 from pathlib import Path
 
 import yaml
-from fastapi import HTTPException, Query, Request, UploadFile
+from fastapi import Body, HTTPException, Query, Request, UploadFile
 from fastapi.responses import PlainTextResponse, StreamingResponse
 from google.adk.cli.fast_api import get_fast_api_app
 
@@ -184,6 +184,35 @@ def sandbox_delete_directory(path: str = Query(...)):
         raise HTTPException(status_code=403, detail="Cannot delete sandbox root")
     shutil.rmtree(target)
     return {"deleted": path}
+
+
+@app.post("/sandbox/move")
+def sandbox_move(src: str = Body(...), dest: str = Body(...)):
+    """Move or rename a file/directory within the sandbox."""
+    src_path = _safe_path(src)
+    dest_path = _safe_path(dest)
+    if not src_path.exists():
+        raise HTTPException(status_code=404, detail="Source not found")
+    if dest_path.exists():
+        raise HTTPException(status_code=409, detail="Destination already exists")
+    if not dest_path.parent.exists():
+        raise HTTPException(status_code=404, detail="Destination parent directory not found")
+    if src_path.is_dir() and dest_path.is_relative_to(src_path):
+        raise HTTPException(status_code=400, detail="Cannot move a directory into itself")
+    shutil.move(str(src_path), str(dest_path))
+    return {"ok": True}
+
+
+@app.post("/sandbox/mkdir")
+def sandbox_mkdir(path: str = Body(..., embed=True)):
+    """Create a new directory inside the sandbox."""
+    target = _safe_path(path)
+    if target.exists():
+        raise HTTPException(status_code=409, detail="Path already exists")
+    if not target.parent.exists():
+        raise HTTPException(status_code=404, detail="Parent directory not found")
+    target.mkdir()
+    return {"ok": True}
 
 
 @app.get("/sandbox/download-dir")

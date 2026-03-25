@@ -808,6 +808,9 @@ export default function ChatPage() {
               onClose={() => setPanelOpen(false)}
               onUpload={sandbox.uploadFiles}
               onOrganize={handleOrganize}
+              onMove={sandbox.moveItem}
+              onRename={sandbox.renameItem}
+              onCreateDir={sandbox.createDir}
             />
           </div>
         )}
