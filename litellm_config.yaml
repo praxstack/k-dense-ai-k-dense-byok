@@ -8,6 +8,7 @@
   custom_llm_provider: openai
   # Long agent + tool runs; raise if you hit read timeouts
   timeout: 600
+  stream_timeout: 600
   extra_headers:
     HTTP-Referer: "https://www.k-dense.ai"
     X-Title: "Kady-Expert"
