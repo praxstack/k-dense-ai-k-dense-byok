@@ -29,6 +29,8 @@ const FASTA_EXTS = new Set(["fasta", "fa", "faa", "fna", "ffn", "fastq", "fq"]);
 
 const BIOTABLE_EXTS = new Set(["vcf", "bed", "gff", "gtf", "gff3", "sam", "tsv", "bcf"]);
 
+const LATEX_EXTS = new Set(["tex", "latex"]);
+
 export function fileCategory(name: string): FileCategory {
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
   if (IMAGE_EXTS.has(ext)) return "image";
@@ -38,6 +40,7 @@ export function fileCategory(name: string): FileCategory {
   if (ext === "ipynb") return "notebook";
   if (FASTA_EXTS.has(ext)) return "fasta";
   if (BIOTABLE_EXTS.has(ext)) return "biotable";
+  if (LATEX_EXTS.has(ext)) return "latex";
   return "text";
 }
 
@@ -49,6 +52,13 @@ export interface Tab {
   path: string;
   content: string | null;
   loading: boolean;
+}
+
+export interface LatexCompileResult {
+  success: boolean;
+  pdf_path: string | null;
+  log: string;
+  errors: string[];
 }
 
 export function useSandbox(isActive = false) {
@@ -333,6 +343,27 @@ export function useSandbox(isActive = false) {
     [fetchTree]
   );
 
+  const compileLatex = useCallback(
+    async (path: string, engine = "pdflatex"): Promise<LatexCompileResult> => {
+      try {
+        const res = await fetch(`${API_BASE}/sandbox/compile-latex`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path, engine }),
+        });
+        if (!res.ok) {
+          const detail = await res.text();
+          return { success: false, pdf_path: null, log: detail, errors: [detail] };
+        }
+        return (await res.json()) as LatexCompileResult;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Network error";
+        return { success: false, pdf_path: null, log: msg, errors: [msg] };
+      }
+    },
+    [],
+  );
+
   const refreshOpenTabs = useCallback(async () => {
     const current = tabsRef.current;
     for (const tab of current) {
@@ -389,5 +420,6 @@ export function useSandbox(isActive = false) {
     renameItem,
     createDir,
     refreshOpenTabs,
+    compileLatex,
   };
 }

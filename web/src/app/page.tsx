@@ -207,6 +207,7 @@ function mentionIconForFile(name: string): ReactNode {
   if (cat === "biotable") return <TableIcon className="size-3.5 text-indigo-500" />;
   if (cat === "image") return <FileImageIcon className="size-3.5 text-rose-500" />;
   if (cat === "markdown") return <FileTextIcon className="size-3.5 text-emerald-600" />;
+  if (cat === "latex") return <FileCodeIcon className="size-3.5 text-teal-500" />;
   if (ext === "json" || ext === "jsonl") return <FileJsonIcon className="size-3.5 text-amber-600" />;
   const codeExts = ["py","ts","tsx","js","jsx","rs","go","java","c","cpp","h","rb","sh","bash","css","html","xml","yaml","yml","toml","sql"];
   if (codeExts.includes(ext)) return <FileCodeIcon className="size-3.5 text-violet-500" />;
@@ -845,6 +846,7 @@ export default function ChatPage() {
               onDownload={sandbox.downloadFile}
               onSaveText={sandbox.saveFile}
               onSaveImageBlob={sandbox.saveImageBlob}
+              onCompileLatex={sandbox.compileLatex}
             />
           </div>
         )}

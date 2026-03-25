@@ -1,8 +1,9 @@
 "use client";
 
 import { MessageResponse } from "@/components/ai-elements/message";
+import { LatexEditor } from "@/components/latex-editor";
 import { cn } from "@/lib/utils";
-import { fileCategory, rawFileUrl, type Tab } from "@/lib/use-sandbox";
+import { fileCategory, rawFileUrl, type Tab, type LatexCompileResult } from "@/lib/use-sandbox";
 import CodeMirror, { EditorView } from "@uiw/react-codemirror";
 import { loadLanguage, type LanguageName } from "@uiw/codemirror-extensions-langs";
 import { githubLight } from "@uiw/codemirror-theme-github";
@@ -95,6 +96,7 @@ function categoryLabel(name: string): string {
   if (cat === "markdown") return "markdown";
   if (cat === "csv") return "csv";
   if (cat === "notebook") return "jupyter";
+  if (cat === "latex") return "latex";
   if (cat === "fasta") return ext === "fastq" || ext === "fq" ? "fastq" : "fasta";
   if (cat === "biotable") return ext;
   return langForFile(name);
@@ -1165,6 +1167,7 @@ export interface FilePreviewPanelProps {
   onDownload: (path: string) => void;
   onSaveText: (path: string, content: string) => Promise<boolean>;
   onSaveImageBlob: (path: string, blob: Blob) => Promise<boolean>;
+  onCompileLatex?: (path: string, engine?: string) => Promise<LatexCompileResult>;
 }
 
 export function FilePreviewPanel({
@@ -1175,6 +1178,7 @@ export function FilePreviewPanel({
   onDownload,
   onSaveText,
   onSaveImageBlob,
+  onCompileLatex,
 }: FilePreviewPanelProps) {
   // Per-tab mode tracking
   const [tabModes, setTabModes] = useState<Record<string, PanelMode>>({});
@@ -1257,8 +1261,26 @@ export function FilePreviewPanel({
         </div>
       )}
 
-      {/* Edit mode */}
-      {selectedPath && mode === "edit" && (
+      {/* Edit mode — LaTeX gets the split-pane editor */}
+      {selectedPath && mode === "edit" && cat === "latex" && onCompileLatex && (
+        <>
+          {header}
+          <div className="flex-1 min-h-0">
+            <LatexEditor
+              key={selectedPath}
+              path={selectedPath}
+              name={selectedName ?? ""}
+              initialContent={fileContent ?? ""}
+              onSave={(content) => onSaveText(selectedPath, content)}
+              onCompile={onCompileLatex}
+              onDiscard={() => setMode(selectedPath, "view")}
+            />
+          </div>
+        </>
+      )}
+
+      {/* Edit mode — standard text editor */}
+      {selectedPath && mode === "edit" && (cat !== "latex" || !onCompileLatex) && (
         <>
           {header}
           <div className="flex-1 min-h-0">

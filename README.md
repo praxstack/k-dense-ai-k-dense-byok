@@ -19,6 +19,7 @@ It's built for scientists, analysts, and curious people who want a powerful AI w
 - **Choose your AI model** — Pick from 40+ models (OpenAI, Anthropic, Google, xAI, Qwen, and more) through a simple dropdown in the app. You're not stuck with one.
 - **326 ready-to-use workflows** — Browse a built-in library of workflow templates spanning 22 disciplines — from genomics and drug discovery to finance and astrophysics. Pick a workflow, fill in the variables, select a model, and launch. Each workflow comes with curated skill suggestions so the agent knows exactly which tools to reach for. Workflows that need uploaded data are clearly marked, and you can upload files directly from the launch dialog.
 - **Run heavy computations remotely** — Optionally connect [Modal](https://modal.com/) to run demanding workloads on powerful cloud hardware instead of your laptop.
+- **Add custom MCP servers** — Extend the AI experts' capabilities by adding your own [MCP](https://modelcontextprotocol.io/) servers through the Settings panel. Custom servers are merged with the built-in defaults and persist across app restarts.
 
 > **Note:** The model you select in the dropdown only applies to Kady (the main agent). Expert execution and coding tasks use the Gemini CLI, which always runs through a Gemini model on [OpenRouter](https://openrouter.ai/) regardless of your dropdown selection.
 
@@ -105,8 +106,30 @@ k-dense-byok/
 │   ├── agent.py          ← Main agent definition
 │   └── tools/            ← Tools Kady can use (web search, delegation, etc.)
 ├── web/                  ← Frontend (the UI you see in your browser)
-└── sandbox/              ← Workspace for files and expert tasks (created on first run)
+├── sandbox/              ← Workspace for files and expert tasks (created on first run)
+└── user_config/          ← Your persistent settings (custom MCP servers, etc.)
 ```
+
+## Adding custom MCP servers
+
+You can extend the tools available to Kady's expert agents by adding your own [MCP](https://modelcontextprotocol.io/) servers. Click the **gear icon** in the top-right corner of the app, then open the **MCP Servers** tab.
+
+The editor accepts a JSON object where each key is a server name and its value is the server configuration. For example:
+
+```json
+{
+  "my-server": {
+    "command": "npx",
+    "args": ["-y", "my-mcp-server"]
+  },
+  "remote-api": {
+    "httpUrl": "https://mcp.example.com/api",
+    "headers": { "Authorization": "Bearer your-token" }
+  }
+}
+```
+
+Your custom servers are **merged** with the built-in defaults (docling, parallel-search) and passed to the Gemini CLI. The custom configuration is saved in `user_config/custom_mcps.json` at the project root — outside the `sandbox/` directory — so it survives sandbox deletion and app restarts.
 
 ## Why "BYOK"?
 
@@ -177,7 +200,7 @@ If you hit a case where a skill isn't behaving as expected, try re-running the t
 - Better utilization of Skills
 - Choose what model to use with Gemini CLI
 - Choice between Claude Code or Gemini CLI as the delegation expert
-- Support of MCP config in the UI (can be done in the code right now but we want to make it easier)
+- ~~Support of MCP config in the UI~~ — Done! Open **Settings > MCP Servers** to add custom servers.
 - Better UI experience tailored to scientific workflows
 - Faster PDF parsing
 - AutoResearch integration
