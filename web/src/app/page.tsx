@@ -39,6 +39,7 @@ import { useSkills } from "@/lib/use-skills";
 import type { TurnMeta } from "@/lib/provenance";
 import { hasDirectoryEntries, traverseDroppedEntries } from "@/lib/directory-upload";
 import { useSandbox, fileCategory, type TreeNode } from "@/lib/use-sandbox";
+import { SpeechInput } from "@/components/ai-elements/speech-input";
 import {
   CopyIcon,
   CheckIcon,
@@ -473,6 +474,12 @@ function ChatInput({
     }
   }, [mentionQuery, filteredFiles, mentionSelIdx, applyMention, closeMention]);
 
+  const handleTranscription = useCallback((text: string) => {
+    const current = controller.textInput.value;
+    const sep = current && !current.endsWith(" ") && !current.endsWith("\n") ? " " : "";
+    controller.textInput.setInput(current + sep + text);
+  }, [controller]);
+
   const isMentionOpen = mentionQuery !== null && filteredFiles.length > 0;
   const submitStatus = isStreaming ? "streaming" : agentStatus === "error" ? "error" : "ready";
 
@@ -555,11 +562,17 @@ function ChatInput({
               <ComputeSelector selected={selectedCompute} onChange={onComputeChange} modalConfigured={modalConfigured} />
               <SkillsSelector skills={allSkills} selected={selectedSkills} onChange={onSkillsChange} />
             </div>
-            <PromptInputSubmit
-              className="shrink-0"
-              status={submitStatus as "streaming" | "error" | "ready"}
-              onStop={onStop}
-            />
+            <div className="flex items-center gap-1.5 shrink-0">
+              <SpeechInput
+                size="icon-sm"
+                variant="ghost"
+                onTranscriptionChange={handleTranscription}
+              />
+              <PromptInputSubmit
+                status={submitStatus as "streaming" | "error" | "ready"}
+                onStop={onStop}
+              />
+            </div>
           </PromptInputFooter>
         </PromptInput>
       </div>
