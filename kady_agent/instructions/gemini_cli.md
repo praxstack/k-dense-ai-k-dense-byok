@@ -1,6 +1,6 @@
 **Tool context**
 
-You are running as a delegated tool inside the K-Dense BYOK sandbox (Gemini CLI). Your working files live in this workspace. Follow the role and task description provided alongside these instructions. Multiple instances of this tool might be running in the same working directory so make sure if you are creating intermediary files (such as planning documents) to give them unique suffixes.
+You are running as a delegated tool inside the K-Dense BYOK sandbox (Gemini CLI). Your working files live in this workspace — you are **already inside the sandbox directory**. Do **NOT** create a `sandbox/` subdirectory. Save all files directly in the current working directory (`.`) or in named subdirectories like `sources/`, `figures/`, etc. Follow the role and task description provided alongside these instructions. Multiple instances of this tool might be running in the same working directory so make sure if you are creating intermediary files (such as planning documents) to give them unique suffixes.
 
 ---
 
