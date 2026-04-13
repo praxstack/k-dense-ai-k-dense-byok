@@ -6,7 +6,6 @@ project root — outside ``sandbox/`` so they survive sandbox deletion.
 """
 
 import json
-import os
 from pathlib import Path
 
 CUSTOM_MCPS_PATH = Path("user_config/custom_mcps.json")
@@ -23,12 +22,6 @@ def build_default_settings() -> dict:
             },
         },
     }
-    parallel_key = os.getenv("PARALLEL_API_KEY")
-    if parallel_key:
-        settings["mcpServers"]["parallel-search"] = {
-            "httpUrl": "https://search-mcp.parallel.ai/mcp",
-            "headers": {"Authorization": f"Bearer {parallel_key}"},
-        }
     return settings
 
 
