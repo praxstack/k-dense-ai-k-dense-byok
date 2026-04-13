@@ -263,7 +263,7 @@ def _pricing_tier(prompt_price: float) -> str:
 
 def update_models_json(
     output_path: str = "web/src/data/models.json",
-    default_model_id: str = "google/gemini-3.1-pro-preview",
+    default_model_id: str = "anthropic/claude-opus-4.6",
     max_age_days: int = 90,
     api_key: str | None = None,
 ) -> None:
