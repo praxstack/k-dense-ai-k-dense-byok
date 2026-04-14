@@ -264,21 +264,39 @@ export const SpeechInput = ({
     setIsListening(false);
   }, []);
 
-  const toggleListening = useCallback(() => {
+  const startListening = useCallback(() => {
+    if (isListening || isProcessing) return;
     if (mode === "speech-recognition" && recognitionRef.current) {
-      if (isListening) {
-        recognitionRef.current.stop();
-      } else {
-        recognitionRef.current.start();
-      }
+      recognitionRef.current.start();
     } else if (mode === "media-recorder") {
-      if (isListening) {
-        stopMediaRecorder();
-      } else {
-        startMediaRecorder();
-      }
+      startMediaRecorder();
     }
-  }, [mode, isListening, startMediaRecorder, stopMediaRecorder]);
+  }, [mode, isListening, isProcessing, startMediaRecorder]);
+
+  const stopListening = useCallback(() => {
+    if (!isListening) return;
+    if (mode === "speech-recognition" && recognitionRef.current) {
+      recognitionRef.current.stop();
+    } else if (mode === "media-recorder") {
+      stopMediaRecorder();
+    }
+  }, [mode, isListening, stopMediaRecorder]);
+
+  // Global pointerup to catch release even when pointer leaves the button
+  useEffect(() => {
+    if (!isListening) return;
+
+    const handleGlobalPointerUp = () => {
+      stopListening();
+    };
+
+    document.addEventListener("pointerup", handleGlobalPointerUp);
+    document.addEventListener("pointercancel", handleGlobalPointerUp);
+    return () => {
+      document.removeEventListener("pointerup", handleGlobalPointerUp);
+      document.removeEventListener("pointercancel", handleGlobalPointerUp);
+    };
+  }, [isListening, stopListening]);
 
   // Determine if button should be disabled
   const isDisabled =
@@ -302,17 +320,21 @@ export const SpeechInput = ({
           />
         ))}
 
-      {/* Main record button */}
+      {/* Main record button — hold to talk */}
       <Button
         className={cn(
-          "relative z-10 rounded-full transition-all duration-300",
+          "relative z-10 rounded-full transition-all duration-300 select-none touch-none",
           isListening
             ? "bg-destructive text-white hover:bg-destructive/80 hover:text-white"
             : "bg-primary text-primary-foreground hover:bg-primary/80 hover:text-primary-foreground",
           className
         )}
         disabled={isDisabled}
-        onClick={toggleListening}
+        onPointerDown={(e) => {
+          e.preventDefault();
+          startListening();
+        }}
+        onContextMenu={(e) => e.preventDefault()}
         {...props}
       >
         {isProcessing && <Spinner />}
