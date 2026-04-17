@@ -122,6 +122,39 @@ Select reviewers from the pool below based on what the task involves. Use **all 
 | **Quantitative & statistical reviewer** | Deliverables with numerical analysis, models, statistical tests, or performance metrics | Verifies calculations are correct, statistical tests are appropriate, sample sizes are adequate, confidence intervals and p-values are reported where needed, and results are not cherry-picked. |
 | **Usability & clarity reviewer** | Tutorials, guides, READMEs, user-facing documentation, instructions | Follows the deliverable as a naive reader. Checks that steps are unambiguous, prerequisites are stated, jargon is defined, and a newcomer could reproduce the outcome without guessing. |
 | **Domain expert reviewer** | Specialized fields (e.g. ML/AI, biomedical, legal, financial, engineering) | Adopts the domain's standards. Checks terminology, conventions, regulatory requirements, and whether the work would pass peer review or professional scrutiny in that field. |
+| **Quantitative claims auditor** | Any assistant response or deliverable containing numerical claims (p-values, sample sizes, percentages, counts, durations, fold-changes) | Extracts every numeric claim via the canonical regex spec below. For each, opens the relevant deliverables and locates the exact file + line (and notebook cell, if applicable) that produced it. Emits `.kady/runs/$KADY_TURN_ID/claims.json` with one entry per claim and a `status` of `verified`, `approximate`, `unbacked`, or `ambiguous`. See the **Quantitative claims auditor protocol** section below. |
+
+### Quantitative claims auditor protocol
+
+When you delegate to the Quantitative claims auditor, paste the following spec into the delegation prompt verbatim so the auditor produces a consistent `claims.json`:
+
+```
+You are the Quantitative claims auditor for K-Dense BYOK. Your job:
+1. Extract every numeric claim from the assistant's final text and from the listed deliverables. Use these regexes and treat any match as a claim:
+   - p-value:        p\s*[=<>]\s*\d*\.\d+
+   - sample size:    \bn\s*=\s*\d+
+   - percentage:     \d+(\.\d+)?\s*%
+   - fold-change:    \d+(\.\d+)?\s*-?\s*fold
+   - direction:      (increased|decreased|rose|fell|dropped|grew)\s+(?:by\s+)?\d+(\.\d+)?%?
+   - bare numbers with >= 2 digits after a colon or "=" or "of": \b\d{2,}(\.\d+)?\b (blocklist: years 1900-2099, page references "p. NN")
+2. For each claim, open the deliverable files and find the exact source — cell, row, line, or computed value. Round comparisons to 3 significant figures.
+3. Emit a single JSON file at `.kady/runs/$KADY_TURN_ID/claims.json` with schema:
+   {
+     "turnId": "...",
+     "scannedAt": "<ISO8601>",
+     "claims": [
+       { "text": "p = 0.03", "context": "the shortest surrounding sentence",
+         "status": "verified" | "approximate" | "unbacked" | "ambiguous",
+         "source": { "file": "report/analysis.ipynb", "cell": 7, "line": 23, "value": "0.0284", "note": "optional" } }
+     ]
+   }
+4. Use `approximate` when the claim is a rounded version of the computed value (tolerance 5% relative or 0.01 absolute, whichever larger).
+5. Use `unbacked` when you cannot find any source at all — do NOT guess.
+6. Use `ambiguous` for things that look like claims but might be dates, figure counts, or page numbers.
+7. Return a short human summary of verified vs unbacked counts as the delegate's final message.
+```
+
+Trigger the auditor whenever the response contains three or more numeric tokens, or always when `CLAIMS_AUDIT_ALWAYS=true` in the environment.
 
 ### Step 3 — Act on review verdicts
 

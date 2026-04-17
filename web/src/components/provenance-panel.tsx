@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   XIcon,
   CheckIcon,
@@ -12,13 +12,18 @@ import {
   MessageSquareIcon,
   UserIcon,
   ClockIcon,
+  PlayIcon,
+  Loader2Icon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@/lib/use-agent";
 import {
   buildTimeline,
   exportMethodsSection,
+  exportMethodsSectionFromManifests,
+  fetchManifests,
   type ProvenanceEvent,
+  type RunManifest,
   type TurnMeta,
 } from "@/lib/provenance";
 
@@ -120,18 +125,48 @@ function TimelineNode({ event }: { event: ProvenanceEvent }) {
 export function ProvenancePanel({
   messages,
   turnMeta,
+  sessionId,
   onClose,
 }: {
   messages: ChatMessage[];
   turnMeta: Map<string, TurnMeta>;
+  sessionId: string | null;
   onClose: () => void;
 }) {
   const [copied, setCopied] = useState(false);
+  const [manifests, setManifests] = useState<RunManifest[]>([]);
+  const [replayState, setReplayState] = useState<{
+    status: "idle" | "confirming" | "running" | "complete" | "error";
+    events: Array<{ event: string; [k: string]: unknown }>;
+    error?: string;
+  }>({ status: "idle", events: [] });
 
   const events = useMemo(
     () => buildTimeline(messages, turnMeta),
     [messages, turnMeta]
   );
+
+  const turnIds = useMemo(
+    () =>
+      messages
+        .filter((m) => m.role === "assistant" && m.turnId)
+        .map((m) => m.turnId as string),
+    [messages]
+  );
+
+  useEffect(() => {
+    if (!sessionId || turnIds.length === 0) {
+      setManifests([]);
+      return;
+    }
+    let cancelled = false;
+    void fetchManifests(sessionId, turnIds).then((result) => {
+      if (!cancelled) setManifests(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, turnIds]);
 
   const sessionDuration = useMemo(() => {
     if (events.length < 2) return null;
@@ -145,12 +180,66 @@ export function ProvenancePanel({
     return `${hrs}h ${mins}m`;
   }, [events]);
 
+  const apiBase =
+    process.env.NEXT_PUBLIC_ADK_API_URL ?? "http://localhost:8000";
+
+  const handleReplayConfirm = useCallback(() => {
+    setReplayState({ status: "confirming", events: [] });
+  }, []);
+
+  const handleReplayRun = useCallback(async () => {
+    if (!sessionId || turnIds.length === 0) return;
+    setReplayState({ status: "running", events: [] });
+    try {
+      const resp = await fetch(`${apiBase}/replay`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId, turnIds }),
+      });
+      if (!resp.ok || !resp.body) {
+        throw new Error(`replay ${resp.status}`);
+      }
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const event = JSON.parse(line);
+            setReplayState((prev) => ({
+              ...prev,
+              events: [...prev.events, event],
+            }));
+          } catch {
+            // skip malformed
+          }
+        }
+      }
+      setReplayState((prev) => ({ ...prev, status: "complete" }));
+    } catch (exc) {
+      setReplayState((prev) => ({
+        ...prev,
+        status: "error",
+        error: exc instanceof Error ? exc.message : "Replay failed",
+      }));
+    }
+  }, [apiBase, sessionId, turnIds]);
+
   const handleCopyMethods = useCallback(() => {
-    const text = exportMethodsSection(events);
+    const text =
+      manifests.length > 0
+        ? exportMethodsSectionFromManifests(manifests)
+        : exportMethodsSection(events);
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-  }, [events]);
+  }, [events, manifests]);
 
   return (
     <>
@@ -169,6 +258,23 @@ export function ProvenancePanel({
             <h2 className="text-sm font-semibold">Session Provenance</h2>
           </div>
           <div className="flex items-center gap-1.5">
+            <button
+              onClick={handleReplayConfirm}
+              disabled={
+                !sessionId ||
+                turnIds.length === 0 ||
+                replayState.status === "running"
+              }
+              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+              title="Re-run every saved delegation for this session"
+            >
+              {replayState.status === "running" ? (
+                <Loader2Icon className="size-3 animate-spin" />
+              ) : (
+                <PlayIcon className="size-3" />
+              )}
+              Re-run
+            </button>
             <button
               onClick={handleCopyMethods}
               className={cn(
@@ -195,6 +301,111 @@ export function ProvenancePanel({
           </div>
         </div>
 
+        {replayState.status !== "idle" && (
+          <div className="border-b bg-muted/30 px-4 py-3 text-xs">
+            {replayState.status === "confirming" ? (
+              <div className="flex flex-col gap-2">
+                <p className="font-medium text-foreground">
+                  Re-run this session?
+                </p>
+                <p className="text-muted-foreground">
+                  Re-runs every delegation using the saved prompts, session
+                  seed, and attachment SHAs. LLM output may differ because
+                  upstream providers are nondeterministic. The original
+                  session is preserved; a new replay manifest is created.
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleReplayRun}
+                    className="rounded-md bg-foreground px-2.5 py-1 text-xs font-medium text-background hover:opacity-90"
+                  >
+                    Re-run {turnIds.length} turn{turnIds.length !== 1 ? "s" : ""}
+                  </button>
+                  <button
+                    onClick={() =>
+                      setReplayState({ status: "idle", events: [] })
+                    }
+                    className="rounded-md border px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-foreground">
+                    Replay{" "}
+                    {replayState.status === "running"
+                      ? "in progress"
+                      : replayState.status === "complete"
+                      ? "complete"
+                      : "error"}
+                  </span>
+                  <button
+                    onClick={() =>
+                      setReplayState({ status: "idle", events: [] })
+                    }
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    <XIcon className="size-3" />
+                  </button>
+                </div>
+                {replayState.error && (
+                  <span className="text-red-600 dark:text-red-400">
+                    {replayState.error}
+                  </span>
+                )}
+                <div className="mt-1 max-h-56 overflow-y-auto rounded border bg-background px-2 py-1 font-mono text-[10px] text-muted-foreground">
+                  {replayState.events.slice(-60).map((ev, i) => {
+                    const diff = ev.diff as
+                      | {
+                          inputHashMatch?: boolean;
+                          delegationsOriginal?: number;
+                          delegationsReplayed?: number;
+                        }
+                      | undefined;
+                    return (
+                      <div key={i} className="whitespace-pre-wrap break-all">
+                        <span className="text-foreground/80">{ev.event}</span>
+                        {typeof ev.originalTurnId === "string"
+                          ? ` original=${String(ev.originalTurnId).slice(-6)}`
+                          : ""}
+                        {typeof ev.newTurnId === "string"
+                          ? ` new=${String(ev.newTurnId).slice(-6)}`
+                          : ""}
+                        {typeof ev.durationMs === "number"
+                          ? ` ${ev.durationMs}ms`
+                          : ""}
+                        {typeof ev.detail === "string"
+                          ? ` - ${ev.detail}`
+                          : ""}
+                        {diff ? (
+                          <span
+                            className={cn(
+                              "ml-1",
+                              diff.inputHashMatch
+                                ? "text-emerald-600 dark:text-emerald-400"
+                                : "text-amber-600 dark:text-amber-400"
+                            )}
+                          >
+                            {diff.inputHashMatch
+                              ? " input✓"
+                              : " input≠"}
+                            {typeof diff.delegationsReplayed === "number"
+                              ? ` delegs=${diff.delegationsReplayed}/${diff.delegationsOriginal}`
+                              : ""}
+                          </span>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Timeline body */}
         <div className="flex-1 overflow-y-auto px-4 py-4">
           {events.length === 0 ? (
@@ -214,14 +425,35 @@ export function ProvenancePanel({
 
         {/* Footer */}
         {events.length > 0 && (
-          <div className="flex items-center justify-between border-t px-4 py-2">
-            <span className="text-[10px] text-muted-foreground">
-              {events.length} event{events.length !== 1 ? "s" : ""}
-            </span>
-            {sessionDuration && (
+          <div className="flex flex-col gap-1 border-t px-4 py-2">
+            <div className="flex items-center justify-between">
               <span className="text-[10px] text-muted-foreground">
-                Duration: {sessionDuration}
+                {events.length} event{events.length !== 1 ? "s" : ""}
+                {manifests.length > 0
+                  ? ` \u00b7 ${manifests.length} manifest${manifests.length !== 1 ? "s" : ""}`
+                  : ""}
               </span>
+              {sessionDuration && (
+                <span className="text-[10px] text-muted-foreground">
+                  Duration: {sessionDuration}
+                </span>
+              )}
+            </div>
+            {manifests.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {manifests.map((m) => (
+                  <a
+                    key={m.turnId}
+                    href={`${process.env.NEXT_PUBLIC_ADK_API_URL ?? "http://localhost:8000"}/turns/${m.sessionId}/${m.turnId}/manifest`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[10px] text-muted-foreground underline decoration-dotted hover:text-foreground"
+                    title={`Manifest for turn ${m.turnId} (sha256:${(m.manifestSha256 ?? "").slice(0, 8)})`}
+                  >
+                    turn {m.turnId.slice(-6)}
+                  </a>
+                ))}
+              </div>
             )}
           </div>
         )}

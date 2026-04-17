@@ -32,6 +32,9 @@ import { SkillsSelector, buildSkillsContext, type Skill } from "@/components/ski
 import { ProvenancePanel } from "@/components/provenance-panel";
 import { SettingsDialog } from "@/components/settings-dialog";
 import { WorkflowsPanel } from "@/components/workflows-panel";
+import { CitationBadge } from "@/components/citation-badge";
+import { ClaimsBadge, useClaimsUnderlines } from "@/components/claims-badge";
+import type { ChatMessage } from "@/lib/use-agent";
 import { APP_VERSION, useUpdateCheck } from "@/lib/version";
 import { useAgent, type ActivityItem } from "@/lib/use-agent";
 import { useConfig } from "@/lib/use-config";
@@ -731,8 +734,30 @@ function ChatInput({
   );
 }
 
+function AssistantMessageBody({
+  message,
+  onRunClaims,
+}: {
+  message: ChatMessage;
+  onRunClaims: () => void;
+}) {
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  useClaimsUnderlines(bodyRef, message.claims?.claims);
+  return (
+    <>
+      <div ref={bodyRef}>
+        <MessageResponse>{message.content}</MessageResponse>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        {message.citations && <CitationBadge report={message.citations} />}
+        <ClaimsBadge report={message.claims} onRun={onRunClaims} />
+      </div>
+    </>
+  );
+}
+
 export default function ChatPage() {
-  const { messages, status, send, stop, reset } = useAgent();
+  const { messages, status, send, stop, reset, getSessionId, loadClaims } = useAgent();
   const isStreaming = status === "streaming" || status === "submitted";
   const sandbox = useSandbox(isStreaming);
   const config = useConfig();
@@ -857,7 +882,12 @@ export default function ChatPage() {
         ? `\n\nMake sure to instruct the delegated expert to use the skills: ${suggestedSkills.map((s) => `'${s}'`).join(", ")}`
         : "";
       const fullPrompt = prompt + fileRefs + computeCtx + skillsCtx;
-      const msgId = await send(fullPrompt, model.id);
+      const msgId = await send(fullPrompt, model.id, {
+        attachments: uploadedFiles,
+        skills: suggestedSkills,
+        databases: [],
+        compute: compute?.label ?? null,
+      });
       if (msgId) {
         turnMetaRef.current.set(msgId, {
           model: model.label,
@@ -893,7 +923,12 @@ export default function ChatPage() {
         ]);
         return;
       }
-      const msgId = await send(text, selectedModel.id);
+      const msgId = await send(text, selectedModel.id, {
+        attachments: attachedFiles,
+        skills: selectedSkills.map((s) => s.name),
+        databases: selectedDbs.map((db) => db.name),
+        compute: selectedCompute?.label ?? null,
+      });
       if (msgId) {
         turnMetaRef.current.set(msgId, {
           model: selectedModel.label,
@@ -913,7 +948,12 @@ export default function ChatPage() {
     if (status !== "ready" || messageQueue.length === 0) return;
     const [next, ...rest] = messageQueue;
     setMessageQueue(rest);
-    send(next.text, next.model.id).then((msgId) => {
+    send(next.text, next.model.id, {
+      attachments: next.files,
+      skills: next.skills.map((s) => s.name),
+      databases: next.databases.map((db) => db.name),
+      compute: next.compute?.label ?? null,
+    }).then((msgId) => {
       if (msgId) {
         turnMetaRef.current.set(msgId, {
           model: next.model.label,
@@ -1129,6 +1169,11 @@ export default function ChatPage() {
                             <Shimmer className="text-sm" duration={1.5}>
                               Thinking...
                             </Shimmer>
+                          ) : message.role === "assistant" ? (
+                            <AssistantMessageBody
+                              message={message}
+                              onRunClaims={() => loadClaims(message.id)}
+                            />
                           ) : (
                             <MessageResponse>{message.content}</MessageResponse>
                           )}
@@ -1207,6 +1252,7 @@ export default function ChatPage() {
         <ProvenancePanel
           messages={messages}
           turnMeta={turnMetaRef.current}
+          sessionId={getSessionId()}
           onClose={() => setProvenanceOpen(false)}
         />
       )}

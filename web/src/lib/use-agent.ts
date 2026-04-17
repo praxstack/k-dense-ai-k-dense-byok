@@ -15,6 +15,53 @@ export interface ActivityItem {
   timestamp: number;
 }
 
+export type CitationKind = "doi" | "arxiv" | "pubmed" | "url";
+export type CitationStatus = "verified" | "unresolved" | "skipped";
+
+export interface CitationEntry {
+  raw: string;
+  kind: CitationKind;
+  identifier: string;
+  status: CitationStatus;
+  title?: string | null;
+  url?: string | null;
+  resolvedAt?: number | null;
+  error?: string | null;
+}
+
+export interface CitationReport {
+  total: number;
+  verified: number;
+  unresolved: number;
+  entries: CitationEntry[];
+  loading?: boolean;
+}
+
+export type ClaimStatus = "verified" | "approximate" | "unbacked" | "ambiguous";
+
+export interface ClaimSource {
+  file?: string;
+  cell?: number;
+  line?: number;
+  value?: string;
+  note?: string;
+}
+
+export interface ClaimEntry {
+  text: string;
+  context?: string;
+  status: ClaimStatus;
+  source?: ClaimSource;
+}
+
+export interface ClaimsReport {
+  turnId?: string;
+  scannedAt?: string;
+  claims: ClaimEntry[];
+  loading?: boolean;
+  error?: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
@@ -22,6 +69,9 @@ export interface ChatMessage {
   activities?: ActivityItem[];
   modelVersion?: string;
   timestamp: number;
+  turnId?: string;
+  citations?: CitationReport;
+  claims?: ClaimsReport;
 }
 
 type Status = "ready" | "submitted" | "streaming" | "error";
@@ -118,7 +168,16 @@ export function useAgent() {
   }, []);
 
   const send = useCallback(
-    async (text: string, model?: string): Promise<string | undefined> => {
+    async (
+      text: string,
+      model?: string,
+      meta?: {
+        attachments?: string[];
+        skills?: string[];
+        databases?: string[];
+        compute?: string | null;
+      }
+    ): Promise<string | undefined> => {
       if (!text.trim() || status === "submitted" || status === "streaming") return;
 
       const userMsgId = nextId();
@@ -146,6 +205,13 @@ export function useAgent() {
           );
         };
 
+        const stateDelta: Record<string, unknown> = {};
+        if (model) stateDelta._model = model;
+        if (meta?.attachments?.length) stateDelta._attachments = meta.attachments;
+        if (meta?.skills?.length) stateDelta._skills = meta.skills;
+        if (meta?.databases?.length) stateDelta._databases = meta.databases;
+        if (meta?.compute) stateDelta._compute = meta.compute;
+
         const res = await fetch(`${API_BASE}/run_sse`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -158,7 +224,7 @@ export function useAgent() {
               parts: [{ text }],
             },
             streaming: true,
-            ...(model ? { state_delta: { _model: model } } : {}),
+            ...(Object.keys(stateDelta).length > 0 ? { state_delta: stateDelta } : {}),
           }),
           signal: controller.signal,
         });
@@ -204,6 +270,17 @@ export function useAgent() {
                   ...message,
                   modelVersion: event.modelVersion,
                 }));
+              }
+
+              const stateDelta = event.actions?.stateDelta ?? event.actions?.state_delta;
+              if (stateDelta && typeof stateDelta === "object") {
+                const nextTurnId = (stateDelta as Record<string, unknown>)._turnId;
+                if (typeof nextTurnId === "string") {
+                  updateAssistant((message) => ({
+                    ...message,
+                    turnId: nextTurnId,
+                  }));
+                }
               }
 
               const parts = event.content?.parts;
@@ -324,6 +401,85 @@ export function useAgent() {
           ),
         }));
         setStatus("ready");
+
+        // Fire-and-forget deterministic citation verification on the final
+        // assistant text plus any deliverable files the expert produced.
+        // The badge hydrates asynchronously; unresolved citations reveal
+        // themselves in the popover.
+        void (async () => {
+          const finalMessage = await new Promise<ChatMessage | undefined>(
+            (resolve) =>
+              setMessages((prev) => {
+                resolve(prev.find((m) => m.id === assistantId));
+                return prev;
+              })
+          );
+          const text = finalMessage?.content ?? "";
+          const turnId = finalMessage?.turnId;
+          if (!text.trim()) return;
+
+          updateAssistant((message) => ({
+            ...message,
+            citations: {
+              total: 0,
+              verified: 0,
+              unresolved: 0,
+              entries: [],
+              loading: true,
+            },
+          }));
+
+          let deliverables: string[] = [];
+          if (turnId && sessionIdRef.current) {
+            try {
+              const mResp = await fetch(
+                `${API_BASE}/turns/${sessionIdRef.current}/${turnId}/manifest`
+              );
+              if (mResp.ok) {
+                const manifest = await mResp.json();
+                if (Array.isArray(manifest?.output?.deliverables)) {
+                  deliverables = manifest.output.deliverables;
+                }
+              }
+            } catch {
+              // best-effort
+            }
+          }
+
+          try {
+            const resp = await fetch(`${API_BASE}/verify-citations`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ text, files: deliverables }),
+            });
+            if (!resp.ok) throw new Error(`verify-citations ${resp.status}`);
+            const report = (await resp.json()) as CitationReport;
+            updateAssistant((message) => ({
+              ...message,
+              citations: { ...report, loading: false },
+            }));
+
+            if (turnId && sessionIdRef.current) {
+              void fetch(
+                `${API_BASE}/turns/${sessionIdRef.current}/${turnId}/citations`,
+                {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    total: report.total,
+                    verified: report.verified,
+                    unresolved: report.unresolved,
+                  }),
+                }
+              ).catch(() => {});
+            }
+          } catch {
+            updateAssistant((message) => ({
+              ...message,
+              citations: undefined,
+            }));
+          }
+        })();
       } catch (err: unknown) {
         if (err instanceof DOMException && err.name === "AbortError") {
           setMessages((prev) =>
@@ -380,5 +536,78 @@ export function useAgent() {
     sessionIdRef.current = null;
   }, []);
 
-  return { messages, status, send, stop, reset };
+  const getSessionId = useCallback(() => sessionIdRef.current, []);
+
+  const loadClaims = useCallback(async (messageId: string) => {
+    const sessionId = sessionIdRef.current;
+    const snapshot = await new Promise<ChatMessage | undefined>((resolve) =>
+      setMessages((prev) => {
+        resolve(prev.find((m) => m.id === messageId));
+        return prev;
+      })
+    );
+    const turnId = snapshot?.turnId;
+    if (!sessionId || !turnId) return;
+
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === messageId
+          ? { ...m, claims: { claims: [], loading: true } }
+          : m
+      )
+    );
+    try {
+      const resp = await fetch(
+        `${API_BASE}/turns/${sessionId}/${turnId}/claims`
+      );
+      if (resp.status === 404) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === messageId
+              ? {
+                  ...m,
+                  claims: {
+                    claims: [],
+                    error: "Run the Quantitative claims auditor from the main agent to populate this turn's claims.",
+                  },
+                }
+              : m
+          )
+        );
+        return;
+      }
+      if (!resp.ok) throw new Error(`claims ${resp.status}`);
+      const data = await resp.json();
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === messageId
+            ? {
+                ...m,
+                claims: {
+                  turnId: data.turnId,
+                  scannedAt: data.scannedAt,
+                  claims: Array.isArray(data.claims) ? data.claims : [],
+                },
+              }
+            : m
+        )
+      );
+    } catch (exc) {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === messageId
+            ? {
+                ...m,
+                claims: {
+                  claims: [],
+                  error: exc instanceof Error ? exc.message : "Failed to load claims",
+                },
+              }
+            : m
+        )
+      );
+    }
+  }, []);
+
+  return { messages, status, send, stop, reset, getSessionId, loadClaims };
 }

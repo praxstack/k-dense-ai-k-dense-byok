@@ -143,3 +143,58 @@ Before declaring a task complete, verify:
 If any answer is "no," go back and fix it before finishing.
 
 </PROTOCOL:SELF_CHECK>
+
+---
+
+<PROTOCOL:REPRODUCIBILITY>
+
+## Reproducibility contract — required for every delegation
+
+Kady records a per-turn run manifest so scientists can defend and re-run what you produced. You must co-operate by writing three small artifacts at the **end** of every task, before returning control. The orchestrator reads these from `.kady/expert/$KADY_DELEGATION_ID/` in the working directory and folds them into the manifest.
+
+Environment variables you can rely on:
+
+- `KADY_SEED` — 32-hex-char session RNG seed. Pass to every sampler you create.
+- `KADY_TURN_ID` — ULID for the current user turn.
+- `KADY_DELEGATION_ID` — three-digit ID for this specific delegation (e.g. `001`, `002`, ...).
+- `KADY_SESSION_ID` — ADK session ID.
+
+### Step 1 — Seed every RNG
+
+If any code you ran used randomness (numpy, torch, sklearn, random, R set.seed, sampling MCP calls, etc.), you **must** read `KADY_SEED` and pass it to every RNG constructor. Log the seed and any sub-seeds derived from it. Bit-for-bit reproducibility is not expected for LLM calls, but it **is** expected for deterministic scientific code.
+
+### Step 2 — Write `env.lock`
+
+After any delegation that executed Python, R, or shell code against installed packages:
+
+```bash
+mkdir -p .kady/expert/$KADY_DELEGATION_ID
+uv pip freeze > .kady/expert/$KADY_DELEGATION_ID/env.lock
+```
+
+For R, append `sessionInfo()` output to the same file:
+
+```r
+writeLines(capture.output(sessionInfo()), ".kady/expert/$KADY_DELEGATION_ID/env.lock")
+```
+
+If the task was purely prose with no code execution, skip this step.
+
+### Step 3 — Write `deliverables.json`
+
+List every file you **created or modified** in this delegation (paths relative to the current working directory, i.e. the sandbox root). Do not list files under `.kady/`, `.venv/`, or `.gemini/`.
+
+```bash
+cat > .kady/expert/$KADY_DELEGATION_ID/deliverables.json <<'EOF'
+[
+  "report/analysis.md",
+  "figures/fig1.png"
+]
+EOF
+```
+
+### Failure mode
+
+If you skip these steps, the manifest records `envLockPath: null` for your delegation and the methods paragraph will note "(env lock unavailable for delegation X)." This degrades reviewer trust in the result and is not acceptable for any task involving computation or sampling.
+
+</PROTOCOL:REPRODUCIBILITY>
