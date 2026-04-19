@@ -53,19 +53,83 @@ type PdfPage = import("pdfjs-dist").PDFPageProxy;
 
 let pdfjsPromise: Promise<PdfjsModule> | null = null;
 
+// pdfjs-dist 5.6+ uses `Map.prototype.getOrInsertComputed`, a TC39 stage-2
+// proposal (`upsert`) not yet shipped in Chrome/Electron versions we target.
+// Polyfill before loading the library to avoid "is not a function" at
+// document open time.
+function installMapUpsertPolyfill(): void {
+  type UpsertMap = Map<unknown, unknown> & {
+    getOrInsertComputed?: (k: unknown, fn: (k: unknown) => unknown) => unknown;
+    getOrInsert?: (k: unknown, v: unknown) => unknown;
+  };
+  const proto = Map.prototype as unknown as UpsertMap;
+  if (typeof proto.getOrInsertComputed !== "function") {
+    proto.getOrInsertComputed = function (
+      this: Map<unknown, unknown>,
+      key: unknown,
+      fn: (k: unknown) => unknown,
+    ) {
+      if (this.has(key)) return this.get(key);
+      const v = fn(key);
+      this.set(key, v);
+      return v;
+    };
+  }
+  if (typeof proto.getOrInsert !== "function") {
+    proto.getOrInsert = function (
+      this: Map<unknown, unknown>,
+      key: unknown,
+      value: unknown,
+    ) {
+      if (this.has(key)) return this.get(key);
+      this.set(key, value);
+      return value;
+    };
+  }
+}
+
+// Polyfill source as a string so we can prepend it to the worker before
+// it evaluates the bundled pdfjs code.
+const MAP_UPSERT_POLYFILL_SRC = `
+(function(){
+  var p = Map.prototype;
+  if (typeof p.getOrInsertComputed !== 'function') {
+    p.getOrInsertComputed = function(k, fn){
+      if (this.has(k)) return this.get(k);
+      var v = fn(k); this.set(k, v); return v;
+    };
+  }
+  if (typeof p.getOrInsert !== 'function') {
+    p.getOrInsert = function(k, v){
+      if (this.has(k)) return this.get(k);
+      this.set(k, v); return v;
+    };
+  }
+})();
+`;
+
+async function buildWorkerUrl(): Promise<string> {
+  // Resolve bundled worker asset URL. Works with both Webpack and Turbopack.
+  const realUrl = new URL(
+    "pdfjs-dist/build/pdf.worker.min.mjs",
+    import.meta.url,
+  ).toString();
+  try {
+    const src = await fetch(realUrl).then((r) => r.text());
+    const patched = `${MAP_UPSERT_POLYFILL_SRC}\n${src}`;
+    const blob = new Blob([patched], { type: "text/javascript" });
+    return URL.createObjectURL(blob);
+  } catch {
+    return realUrl;
+  }
+}
+
 function loadPdfjs(): Promise<PdfjsModule> {
   if (pdfjsPromise) return pdfjsPromise;
   pdfjsPromise = (async () => {
+    installMapUpsertPolyfill();
     const pdfjs = await import("pdfjs-dist");
-    const worker = await import("pdfjs-dist/build/pdf.worker.min.mjs?url").catch(
-      async () => {
-        // Fallback for bundlers that don't support ?url.
-        const mod = await import("pdfjs-dist/build/pdf.worker.min.mjs");
-        return { default: mod };
-      },
-    );
-    pdfjs.GlobalWorkerOptions.workerSrc =
-      (worker as { default: string }).default;
+    pdfjs.GlobalWorkerOptions.workerSrc = await buildWorkerUrl();
     return pdfjs;
   })();
   return pdfjsPromise;

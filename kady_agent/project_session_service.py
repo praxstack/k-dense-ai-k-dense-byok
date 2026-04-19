@@ -46,7 +46,13 @@ class ProjectSessionService(BaseSessionService):
             if svc is not None:
                 return svc
             paths = ensure_project_exists(project_id)
-            db_url = f"sqlite:///{paths.sessions_db_path}"
+            # ADK's DatabaseSessionService uses SQLAlchemy's async engine, so
+            # the URL needs an async-capable driver. Plain `sqlite://` loads
+            # the sync `pysqlite` driver which raises
+            # `InvalidRequestError: The asyncio extension requires an async
+            # driver`. `sqlite+aiosqlite://` routes to the aiosqlite driver
+            # (already pulled in transitively via google-adk).
+            db_url = f"sqlite+aiosqlite:///{paths.sessions_db_path}"
             svc = DatabaseSessionService(db_url)
             self._services[project_id] = svc
             return svc

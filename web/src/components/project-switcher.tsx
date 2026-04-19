@@ -55,6 +55,17 @@ const EMPTY_FORM: ProjectFormState = {
   tags: "",
 };
 
+/** Display a project ID in Title Case when we haven't loaded the project
+ *  metadata yet (e.g. during the first render before `useProjects` resolves).
+ *  Prevents a brief "default" flash before "Default" appears. */
+function formatProjectId(id: string): string {
+  return id
+    .split(/[-_]/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 export function ProjectSwitcher() {
   const {
     projects,
@@ -176,7 +187,7 @@ export function ProjectSwitcher() {
           >
             <FolderIcon className="size-3.5" />
             <span className="max-w-[140px] truncate">
-              {activeProject?.name ?? activeProjectId}
+              {activeProject?.name ?? formatProjectId(activeProjectId)}
             </span>
             <ChevronsUpDownIcon className="size-3 text-muted-foreground" />
           </Button>

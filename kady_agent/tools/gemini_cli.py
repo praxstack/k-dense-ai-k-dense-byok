@@ -27,6 +27,19 @@ _CLI_OPENROUTER_HEADERS = (
 )
 
 
+def _cli_can_route(model: str) -> bool:
+    """Return True when the Gemini CLI + our LiteLLM proxy can handle *model*.
+
+    The expert subprocess routes through the LiteLLM proxy at
+    ``GOOGLE_GEMINI_BASE_URL``. Only models configured there (or in the
+    ``ollama/*`` wildcard) resolve; anything else causes the CLI to hang
+    on a 404 from the proxy. When the orchestrator is on an OpenRouter
+    model like ``openrouter/anthropic/claude-opus-4.7``, we drop the
+    ``-m`` flag so the CLI falls back to its own default Gemini model.
+    """
+    return model.startswith("gemini-") or model.startswith("ollama/")
+
+
 def _parse_stream_json(raw: str) -> dict:
     """Parse Gemini CLI stream-json (JSONL) output into a structured result.
 
@@ -131,12 +144,21 @@ async def delegate_task(
     )
 
     paths = active_paths()
-    if working_directory is None:
+    # Some models (e.g. GPT-5.4 Nano) pass `working_directory="."` or other
+    # relative paths when they shouldn't. Treat any relative path as being
+    # relative to the project's sandbox, not the repo root — the sandbox IS
+    # the working directory. Absolute paths that fall inside the sandbox are
+    # honored as-is; otherwise we refuse and fall back to the sandbox.
+    if working_directory is None or not working_directory.strip():
         cwd = paths.sandbox
     else:
-        cwd = Path(working_directory)
-        if not cwd.is_absolute():
-            cwd = REPO_ROOT / cwd
+        wd = Path(working_directory)
+        if not wd.is_absolute():
+            cwd = (paths.sandbox / wd).resolve()
+        else:
+            cwd = wd.resolve()
+        if not cwd.is_relative_to(paths.sandbox):
+            cwd = paths.sandbox
 
     cwd.mkdir(parents=True, exist_ok=True)
 
@@ -186,13 +208,13 @@ async def delegate_task(
         env["PATH"] = os.pathsep.join([venv_bin] + path_parts)
 
     # Forward the orchestrator-selected model to the expert so local Ollama
-    # (or any other LiteLLM-registered) model is used end-to-end. The CLI
-    # still talks to the same LiteLLM proxy (GOOGLE_GEMINI_BASE_URL); the
-    # proxy's `ollama/*` wildcard and existing OpenRouter entries handle
-    # the actual upstream dispatch.
+    # (or direct LiteLLM-registered Gemini) is used end-to-end. The CLI
+    # only routes via the LiteLLM proxy, so anything that isn't a model
+    # the proxy knows about (gemini-*, ollama/*) would hang or 404 — in
+    # that case fall back to the CLI default (a gemini-* model).
     cli_args: list[str] = ["gemini", "-p", prompt, "--yolo",
                            "--output-format", "stream-json"]
-    if selected_model:
+    if selected_model and _cli_can_route(selected_model):
         cli_args.extend(["-m", selected_model])
 
     started_at = time.time()

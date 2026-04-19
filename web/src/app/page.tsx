@@ -77,8 +77,6 @@ import {
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import Image from "next/image";
-
 const MAX_QUEUE = 5;
 
 interface QueuedMessage {
@@ -1057,13 +1055,13 @@ export default function ChatPage() {
       <header className="relative flex items-center justify-between border-b px-6 py-3">
         <div className="flex items-center gap-2">
           <a href="https://www.k-dense.ai" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2">
-            <Image
+            {/* Plain <img> to avoid Next/Image's aspect-ratio warning when we
+                set height via CSS and let width autosize. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
               src="/brand/kdense-logo.png"
               alt="K-Dense BYOK"
-              width={120}
-              height={28}
-              className="h-7 w-auto object-contain"
-              priority
+              className="h-7 w-auto object-contain dark:invert"
             />
             <span className="text-sm font-semibold tracking-tight text-foreground/80">BYOK</span>
           </a>

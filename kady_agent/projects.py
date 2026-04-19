@@ -292,6 +292,7 @@ def create_project(
     description: str = "",
     tags: Optional[Iterable[str]] = None,
     project_id: Optional[str] = None,
+    seed_skills: bool = True,
 ) -> ProjectMeta:
     name = (name or "").strip() or "Untitled project"
     if project_id is None:
@@ -322,6 +323,10 @@ def create_project(
     index = _load_index()
     index["projects"][meta.id] = meta.to_dict()
     _save_index(index)
+
+    if seed_skills:
+        seed_project_skills(paths)
+
     return meta
 
 
@@ -390,6 +395,83 @@ def delete_project(project_id: str) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _find_sibling_skills_dir(exclude_id: str | None = None) -> Optional[Path]:
+    """Return any other project's ``.gemini/skills`` directory that already has skills.
+
+    Used by ``seed_project_skills`` so a freshly-created project can copy an
+    existing catalogue locally instead of re-cloning from GitHub every time.
+    """
+    if not PROJECTS_ROOT.is_dir():
+        return None
+    for child in PROJECTS_ROOT.iterdir():
+        if not child.is_dir():
+            continue
+        if exclude_id is not None and child.name == exclude_id:
+            continue
+        candidate = child / "sandbox" / ".gemini" / "skills"
+        if not candidate.is_dir():
+            continue
+        try:
+            has_skill = any(
+                (d / "SKILL.md").is_file() for d in candidate.iterdir() if d.is_dir()
+            )
+        except OSError:
+            has_skill = False
+        if has_skill:
+            return candidate
+    return None
+
+
+def seed_project_skills(paths: ProjectPaths) -> None:
+    """Populate ``<project>/sandbox/.gemini/skills`` so the expert can use them.
+
+    Fast path: copy every skill from a sibling project that already has the
+    catalogue. Slow path (no siblings): git-clone the scientific-skills repo.
+    Network failures are logged but never raised - a project without skills
+    is still usable, just with a reduced expert catalogue.
+    """
+    skills_dir = paths.gemini_settings_dir / "skills"
+    if skills_dir.is_dir():
+        try:
+            already_populated = any(
+                (d / "SKILL.md").is_file()
+                for d in skills_dir.iterdir()
+                if d.is_dir()
+            )
+        except OSError:
+            already_populated = False
+        if already_populated:
+            return
+
+    skills_dir.mkdir(parents=True, exist_ok=True)
+
+    source = _find_sibling_skills_dir(exclude_id=paths.id)
+    if source is not None:
+        copied = 0
+        for child in source.iterdir():
+            if not child.is_dir():
+                continue
+            dest = skills_dir / child.name
+            if dest.exists():
+                continue
+            try:
+                shutil.copytree(child, dest)
+                copied += 1
+            except OSError as exc:
+                print(f"  warning: failed to copy skill {child.name}: {exc}")
+        if copied:
+            print(f"Seeded {copied} skills for {paths.id} from {source}")
+            return
+
+    # No sibling catalogue to copy from: fall back to GitHub.
+    from .utils import download_scientific_skills
+
+    try:
+        download_scientific_skills(target_dir=str(skills_dir))
+    except Exception as exc:
+        print(f"  warning: skill download failed for {paths.id}: {exc}")
+
+
 _SANDBOX_PYPROJECT_TEMPLATE = """\
 [project]
 name = "kady-sandbox"
@@ -429,7 +511,6 @@ def init_project_sandbox(
     # Local imports avoid a circular import with gemini_settings / utils, both
     # of which import from this module to resolve paths.
     from .gemini_settings import write_merged_settings
-    from .utils import download_scientific_skills
 
     paths = resolve_paths(project_id)
     paths.sandbox.mkdir(parents=True, exist_ok=True)
@@ -459,12 +540,7 @@ def init_project_sandbox(
             print(f"  warning: uv sync failed for {project_id}: {exc}")
 
     if download_skills:
-        skills_dir = paths.gemini_settings_dir / "skills"
-        if not skills_dir.is_dir() or not any(skills_dir.iterdir()):
-            try:
-                download_scientific_skills(target_dir=str(skills_dir))
-            except Exception as exc:
-                print(f"  warning: skill download failed for {project_id}: {exc}")
+        seed_project_skills(paths)
 
     return paths
 
@@ -501,6 +577,21 @@ def ensure_project_exists(project_id: str) -> ProjectPaths:
 
     if not paths.custom_mcps_path.is_file():
         paths.custom_mcps_path.write_text("{}\n", encoding="utf-8")
+
+    # Always ensure the Gemini CLI workspace settings exist so the expert
+    # authenticates via our LiteLLM proxy (gemini-api-key) regardless of
+    # what the user has in ~/.gemini/settings.json (which defaults to
+    # `vertex-ai` on machines that were previously logged into gcloud).
+    # Workspace-level settings override user-level settings in Gemini CLI.
+    workspace_settings = paths.gemini_settings_dir / "settings.json"
+    if not workspace_settings.is_file():
+        from .gemini_settings import write_merged_settings
+
+        token = set_active_project(project_id)
+        try:
+            write_merged_settings(paths.gemini_settings_dir)
+        finally:
+            ACTIVE_PROJECT.reset(token)
 
     return paths
 
@@ -580,6 +671,7 @@ __all__ = [
     "migrate_legacy_layout",
     "project_exists",
     "resolve_paths",
+    "seed_project_skills",
     "set_active_project",
     "touch_project",
     "update_project",
