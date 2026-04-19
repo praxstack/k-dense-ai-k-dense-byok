@@ -9,9 +9,10 @@ project id is in the URL or request body.
 
 from __future__ import annotations
 
+import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel, Field
 
 from .projects import (
@@ -24,6 +25,26 @@ from .projects import (
     list_projects,
     update_project,
 )
+
+logger = logging.getLogger(__name__)
+
+
+def _bootstrap_sandbox_bg(
+    project_id: str, *, sync_venv: bool = True, download_skills: bool = True
+) -> None:
+    """Run the heavy sandbox bootstrap, swallowing errors into the log.
+
+    Executed via FastAPI ``BackgroundTasks`` so ``POST /projects`` can return
+    the new project record immediately while ``uv sync`` and the skills
+    download run out-of-band. Any exception is logged but never re-raised -
+    the task has already detached from the request.
+    """
+    try:
+        init_project_sandbox(
+            project_id, sync_venv=sync_venv, download_skills=download_skills
+        )
+    except Exception:
+        logger.exception("Sandbox bootstrap failed for project %s", project_id)
 
 
 projects_router = APIRouter(prefix="/projects", tags=["projects"])
@@ -55,8 +76,14 @@ def get_projects():
 
 
 @projects_router.post("", status_code=201)
-def post_project(body: ProjectCreateBody):
-    """Create a new project and seed an empty sandbox directory."""
+def post_project(body: ProjectCreateBody, background_tasks: BackgroundTasks):
+    """Create a new project and schedule its sandbox bootstrap.
+
+    Returns the project record immediately after writing the on-disk
+    skeleton. The heavy bootstrap (GEMINI.md, merged ``.gemini/settings.json``,
+    ``pyproject.toml``, ``uv sync``, scientific-skills catalogue) runs as a
+    background task so the HTTP response isn't blocked on ``uv sync``.
+    """
     try:
         meta = create_project(
             name=body.name,
@@ -69,6 +96,7 @@ def post_project(body: ProjectCreateBody):
     # Touch the on-disk skeleton so subsequent GET /sandbox/tree etc. work
     # without requiring an explicit init call.
     ensure_project_exists(meta.id)
+    background_tasks.add_task(_bootstrap_sandbox_bg, meta.id)
     return meta.to_dict()
 
 

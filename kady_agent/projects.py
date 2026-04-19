@@ -292,8 +292,16 @@ def create_project(
     description: str = "",
     tags: Optional[Iterable[str]] = None,
     project_id: Optional[str] = None,
-    seed_skills: bool = True,
 ) -> ProjectMeta:
+    """Create the on-disk skeleton and registry entry for a new project.
+
+    This is the fast path: it only writes ``project.json``, an empty
+    ``custom_mcps.json``, and the sandbox directory. The heavy bootstrap
+    (GEMINI.md, merged settings, ``pyproject.toml``, ``uv sync``, scientific
+    skills) is handled by ``init_project_sandbox`` and is scheduled as a
+    background task from the HTTP layer so the create request returns
+    immediately.
+    """
     name = (name or "").strip() or "Untitled project"
     if project_id is None:
         project_id = _mint_project_id(name)
@@ -323,9 +331,6 @@ def create_project(
     index = _load_index()
     index["projects"][meta.id] = meta.to_dict()
     _save_index(index)
-
-    if seed_skills:
-        seed_project_skills(paths)
 
     return meta
 
