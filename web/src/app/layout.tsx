@@ -32,7 +32,7 @@ export default function RootLayout({
       >
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           <ProjectProvider>
-            <TooltipProvider>{children}</TooltipProvider>
+            <TooltipProvider delayDuration={350}>{children}</TooltipProvider>
           </ProjectProvider>
         </ThemeProvider>
       </body>

@@ -31,6 +31,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import { DEFAULT_PROJECT_ID, type Project } from "@/lib/projects";
@@ -178,20 +179,33 @@ export function ProjectSwitcher() {
   return (
     <>
       <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 gap-1.5 px-2 text-xs font-medium text-foreground/80 hover:text-foreground"
-            title="Switch project"
-          >
-            <FolderIcon className="size-3.5" />
-            <span className="max-w-[140px] truncate">
-              {activeProject?.name ?? formatProjectId(activeProjectId)}
-            </span>
-            <ChevronsUpDownIcon className="size-3 text-muted-foreground" />
-          </Button>
-        </PopoverTrigger>
+        <InfoTooltip
+          disabled={popoverOpen}
+          content={
+            <>
+              <b>Project: {activeProject?.name ?? formatProjectId(activeProjectId)}</b>
+              <br />
+              Projects isolate sandbox files, chat history, MCP servers, and
+              provenance. Switch projects to work on a different experiment
+              without crosstalk.
+            </>
+          }
+        >
+          <PopoverTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label="Switch project"
+              className="h-7 gap-1.5 px-2 text-xs font-medium text-foreground/80 hover:text-foreground"
+            >
+              <FolderIcon className="size-3.5" />
+              <span className="max-w-[140px] truncate">
+                {activeProject?.name ?? formatProjectId(activeProjectId)}
+              </span>
+              <ChevronsUpDownIcon className="size-3 text-muted-foreground" />
+            </Button>
+          </PopoverTrigger>
+        </InfoTooltip>
         <PopoverContent align="start" className="w-[320px] p-0">
           <Command>
             <CommandInput placeholder="Search projects…" />

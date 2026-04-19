@@ -43,6 +43,7 @@ from kady_agent.gemini_settings import (
     save_custom_mcps,
     write_merged_settings,
 )
+from kady_agent.cost_ledger import read_costs
 from kady_agent.manifest import (
     list_turns,
     read_manifest,
@@ -324,6 +325,17 @@ async def list_session_turns(session_id: str):
     """List turnIds for a session, in lexicographic (creation) order."""
     turns = list_turns(session_id)
     return {"sessionId": session_id, "turns": turns}
+
+
+@app.get("/sessions/{session_id}/costs")
+async def get_session_costs(session_id: str):
+    """Return the OpenRouter cost ledger for a session.
+
+    Aggregates entries written by the orchestrator (ADK + LiteLLM) and the
+    expert (Gemini CLI -> LiteLLM proxy) callbacks. Returns zeroed totals
+    when no ledger exists yet (fresh session, all-Ollama session, etc.).
+    """
+    return read_costs(session_id, project_id=ACTIVE_PROJECT.get())
 
 
 @app.post("/replay")

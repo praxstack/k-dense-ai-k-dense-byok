@@ -25,17 +25,21 @@ import {
 import { Shimmer } from "@/components/ai-elements/shimmer";
 import { FileTreePanel } from "@/components/sandbox-panel";
 import { FilePreviewPanel } from "@/components/file-preview-panel";
-import { DatabaseSelector, buildDatabaseContext, type Database } from "@/components/database-selector";
-import { ComputeSelector, buildComputeContext, type ModalInstance } from "@/components/compute-selector";
+import { buildDatabaseContext, type Database } from "@/components/database-selector";
+import { buildComputeContext, type ModalInstance } from "@/components/compute-selector";
 import { PairedModelSelector, DEFAULT_MODEL, DEFAULT_EXPERT_MODEL, type Model } from "@/components/model-selector";
-import { SkillsSelector, buildSkillsContext, type Skill } from "@/components/skills-selector";
-import { BrowserSelector, buildBrowserContext } from "@/components/browser-selector";
+import { buildSkillsContext, type Skill } from "@/components/skills-selector";
+import { buildBrowserContext } from "@/components/browser-selector";
+import { AddContextMenu } from "@/components/add-context-menu";
+import { ContextChipsBar } from "@/components/context-chips";
 import { useBrowserUseSettings, useChromeProfiles } from "@/lib/use-settings";
 import { ProvenancePanel } from "@/components/provenance-panel";
 import { SettingsDialog } from "@/components/settings-dialog";
 import { WorkflowsPanel } from "@/components/workflows-panel";
 import { CitationBadge } from "@/components/citation-badge";
 import { ProjectSwitcher } from "@/components/project-switcher";
+import { SessionCostPill } from "@/components/session-cost-pill";
+import { useSessionCost } from "@/lib/use-session-cost";
 import type { ChatMessage } from "@/lib/use-agent";
 import { APP_VERSION, useUpdateCheck } from "@/lib/version";
 import { useAgent, type ActivityItem } from "@/lib/use-agent";
@@ -75,6 +79,7 @@ import {
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 const MAX_QUEUE = 5;
 
@@ -249,24 +254,6 @@ function HighlightMatch({ text, query }: { text: string; query: string }) {
       <span className="font-semibold text-foreground">{text.slice(idx, idx + query.length)}</span>
       {text.slice(idx + query.length)}
     </>
-  );
-}
-
-function FileChip({ path, onRemove }: { path: string; onRemove: () => void }) {
-  const name = path.split("/").pop() ?? path;
-  return (
-    <div className="group flex items-center gap-1.5 rounded-lg border border-border/70 bg-muted/60 pl-1.5 pr-1 py-1 text-xs transition-colors hover:bg-muted">
-      <span className="shrink-0">{mentionIconForFile(name)}</span>
-      <span className="max-w-[140px] truncate font-medium text-foreground/80">{name}</span>
-      <button
-        type="button"
-        onClick={onRemove}
-        className="ml-0.5 shrink-0 rounded p-0.5 text-muted-foreground/40 opacity-0 transition-all group-hover:opacity-100 hover:bg-destructive/10 hover:!text-destructive"
-        aria-label={`Remove ${name}`}
-      >
-        <XIcon className="size-2.5" />
-      </button>
-    </div>
   );
 }
 
@@ -704,48 +691,97 @@ function ChatInput({
         )}
 
         <PromptInput onSubmit={handleSubmit} className="rounded-xl border shadow-sm">
-          {/* Attached file chips */}
-          {attachedFiles.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 px-3 pt-2.5">
-              {attachedFiles.map(path => (
-                <FileChip key={path} path={path} onRemove={() => onRemoveFile(path)} />
-              ))}
-            </div>
-          )}
+          <ContextChipsBar
+            attachedFiles={attachedFiles}
+            onRemoveFile={onRemoveFile}
+            selectedDbs={selectedDbs}
+            onDbsChange={onDbsChange}
+            selectedCompute={selectedCompute}
+            onComputeChange={onComputeChange}
+            selectedSkills={selectedSkills}
+            onSkillsChange={onSkillsChange}
+          />
           <PromptInputTextarea
             placeholder={
               queuedMessages.length >= MAX_QUEUE
                 ? `Queue full (${MAX_QUEUE}/${MAX_QUEUE})`
                 : isStreaming && queuedMessages.length > 0
                   ? `Ask Kady anything… (${queuedMessages.length}/${MAX_QUEUE} queued)`
-                  : "Ask Kady anything… (@ for files, drag to attach)"
+                  : "Ask Kady anything… (@ for files, + for data / compute / skills)"
             }
             onChange={handleChange}
             onKeyDown={handleKeyDown}
           />
           <PromptInputFooter>
-            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <AddContextMenu
+                selectedDbs={selectedDbs}
+                onDbsChange={onDbsChange}
+                selectedCompute={selectedCompute}
+                onComputeChange={onComputeChange}
+                modalConfigured={modalConfigured}
+                allSkills={allSkills}
+                selectedSkills={selectedSkills}
+                onSkillsChange={onSkillsChange}
+                onUploadFiles={handleFilesUpload}
+              />
               <PairedModelSelector
                 orchestrator={selectedModel}
                 expert={selectedExpertModel}
                 onChangeOrchestrator={onModelChange}
                 onChangeExpert={onExpertModelChange}
               />
-              <DatabaseSelector selected={selectedDbs} onChange={onDbsChange} />
-              <ComputeSelector selected={selectedCompute} onChange={onComputeChange} modalConfigured={modalConfigured} />
-              <SkillsSelector skills={allSkills} selected={selectedSkills} onChange={onSkillsChange} />
-              <BrowserSelector />
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
-              <SpeechInput
-                size="icon-sm"
-                variant="ghost"
-                onTranscriptionChange={handleTranscription}
-              />
-              <PromptInputSubmit
-                status={submitStatus as "streaming" | "error" | "ready"}
-                onStop={onStop}
-              />
+              <InfoTooltip
+                content={
+                  <>
+                    <b>Dictate</b>
+                    <br />
+                    Transcribe speech into the prompt. Uses the provider
+                    configured in Settings → Speech.
+                  </>
+                }
+              >
+                <span>
+                  <SpeechInput
+                    size="icon-sm"
+                    variant="ghost"
+                    onTranscriptionChange={handleTranscription}
+                  />
+                </span>
+              </InfoTooltip>
+              <InfoTooltip
+                content={
+                  isStreaming ? (
+                    <>
+                      <b>Stop</b>
+                      <br />
+                      Cancel the current turn. Files the agent already wrote
+                      stay in the sandbox.
+                    </>
+                  ) : queuedMessages.length >= MAX_QUEUE ? (
+                    <>
+                      <b>Queue is full</b>
+                      <br />
+                      Wait for the agent to finish before adding more prompts.
+                    </>
+                  ) : (
+                    <>
+                      <b>Send message</b>
+                      <br />
+                      Press <kbd>↵</kbd> to send, <kbd>⇧</kbd>+<kbd>↵</kbd> for
+                      a new line. Prompts sent while the agent is busy are
+                      queued.
+                    </>
+                  )
+                }
+              >
+                <PromptInputSubmit
+                  status={submitStatus as "streaming" | "error" | "ready"}
+                  onStop={onStop}
+                />
+              </InfoTooltip>
             </div>
           </PromptInputFooter>
         </PromptInput>
@@ -782,11 +818,16 @@ export default function ChatPage() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const turnMetaRef = useRef<Map<string, TurnMeta>>(new Map());
   const prevMessageCount = useRef(0);
+  const [costRefreshKey, setCostRefreshKey] = useState(0);
+  const { summary: costSummary, loading: costLoading } = useSessionCost(
+    getSessionId(),
+    costRefreshKey,
+  );
 
   useEffect(() => setMounted(true), []);
 
   // Resizable panel widths (px)
-  const [treeWidth, setTreeWidth] = useState(280);
+  const [treeWidth, setTreeWidth] = useState(320);
   const [chatWidth, setChatWidth] = useState(640);
   const [isResizing, setIsResizing] = useState(false);
   const dragging = useRef<"tree" | "chat" | null>(null);
@@ -833,6 +874,11 @@ export default function ChatPage() {
       prevMessageCount.current = messages.length;
       sandbox.fetchTree();
       sandbox.refreshOpenTabs();
+      // Re-pull the cost ledger so the header pill reflects the turn that
+      // just completed. The orchestrator callback writes synchronously on
+      // completion but the expert callback runs in the proxy process, so
+      // there can be a small delay; refetching once here is usually enough.
+      setCostRefreshKey((k) => k + 1);
     }
   }, [status, messages.length, sandbox]);
 
@@ -1016,16 +1062,31 @@ export default function ChatPage() {
             />
             <span className="text-sm font-semibold tracking-tight text-foreground/80">BYOK</span>
           </a>
-          <span className="text-[11px] text-muted-foreground/60">v{APP_VERSION}</span>
+          <InfoTooltip
+            content={
+              <>
+                <b>K-Dense BYOK v{APP_VERSION}</b>
+                <br />
+                Bring-your-own-key research assistant. All API calls use keys from your{" "}
+                <kbd>.env</kbd> file and run on your machine.
+              </>
+            }
+          >
+            <span className="text-[11px] text-muted-foreground/60 cursor-help">
+              v{APP_VERSION}
+            </span>
+          </InfoTooltip>
           {updateAvailable && (
-            <a
-              href="https://github.com/K-Dense-AI/k-dense-byok"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-[11px] font-medium text-blue-500 hover:text-blue-400 transition-colors"
-            >
-              Update available
-            </a>
+            <InfoTooltip content="A newer version is available on GitHub. Click to open the release page.">
+              <a
+                href="https://github.com/K-Dense-AI/k-dense-byok"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[11px] font-medium text-blue-500 hover:text-blue-400 transition-colors"
+              >
+                Update available
+              </a>
+            </InfoTooltip>
           )}
           <span className="mx-1 h-4 w-px bg-border/60" aria-hidden />
           <ProjectSwitcher />
@@ -1034,49 +1095,115 @@ export default function ChatPage() {
           Brought to you by K-Dense, Inc.
         </p>
         <div className="flex items-center gap-2">
+          <SessionCostPill summary={costSummary} loading={costLoading} />
           {messages.length > 0 && (
             <>
-              <button
-                onClick={() => setProvenanceOpen(true)}
-                className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                title="Session provenance"
+              <InfoTooltip
+                content={
+                  <>
+                    <b>Session provenance</b>
+                    <br />
+                    Full record of every turn in this session: prompts, model, expert,
+                    datasets, compute, skills, and attached files. Exportable for your
+                    methods section.
+                  </>
+                }
               >
-                <ScrollTextIcon className="size-4" />
-              </button>
-              <button
-                onClick={reset}
-                className="rounded-lg px-3 py-1.5 text-muted-foreground text-sm transition-colors hover:bg-muted hover:text-foreground"
+                <button
+                  onClick={() => setProvenanceOpen(true)}
+                  aria-label="Open session provenance"
+                  className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  <ScrollTextIcon className="size-4" />
+                </button>
+              </InfoTooltip>
+              <InfoTooltip
+                content={
+                  <>
+                    <b>New chat</b>
+                    <br />
+                    Start a fresh session. Sandbox files stay; chat history and
+                    cost tracking reset.
+                  </>
+                }
               >
-                New chat
-              </button>
+                <button
+                  onClick={reset}
+                  className="rounded-lg px-3 py-1.5 text-muted-foreground text-sm transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  New chat
+                </button>
+              </InfoTooltip>
             </>
           )}
-          <button
-            onClick={() => setPanelOpen((v) => !v)}
-            className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            title={panelOpen ? "Hide sandbox" : "Show sandbox"}
+          <InfoTooltip
+            content={
+              panelOpen ? (
+                <>
+                  <b>Hide sandbox</b>
+                  <br />
+                  Collapse the file tree and preview panes to focus on the chat.
+                </>
+              ) : (
+                <>
+                  <b>Show sandbox</b>
+                  <br />
+                  Open the agent&apos;s working directory with the file tree and
+                  inline previews.
+                </>
+              )
+            }
           >
-            {panelOpen ? (
-              <PanelLeftCloseIcon className="size-4" />
-            ) : (
-              <PanelLeftIcon className="size-4" />
-            )}
-          </button>
-          <button
-            onClick={() => setSettingsOpen(true)}
-            className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            title="Settings"
-          >
-            <SettingsIcon className="size-4" />
-          </button>
-          {mounted && (
             <button
-              onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
+              onClick={() => setPanelOpen((v) => !v)}
+              aria-label={panelOpen ? "Hide sandbox" : "Show sandbox"}
               className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              title={resolvedTheme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
             >
-              {resolvedTheme === "dark" ? <SunIcon className="size-4" /> : <MoonIcon className="size-4" />}
+              {panelOpen ? (
+                <PanelLeftCloseIcon className="size-4" />
+              ) : (
+                <PanelLeftIcon className="size-4" />
+              )}
             </button>
+          </InfoTooltip>
+          <InfoTooltip
+            content={
+              <>
+                <b>Settings</b>
+                <br />
+                Configure API keys, MCP servers, browser automation, Chrome
+                profiles, and speech-to-text.
+              </>
+            }
+          >
+            <button
+              onClick={() => setSettingsOpen(true)}
+              aria-label="Open settings"
+              className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <SettingsIcon className="size-4" />
+            </button>
+          </InfoTooltip>
+          {mounted && (
+            <InfoTooltip
+              content={
+                resolvedTheme === "dark"
+                  ? "Switch to light mode"
+                  : "Switch to dark mode"
+              }
+            >
+              <button
+                onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
+                aria-label={
+                  resolvedTheme === "dark"
+                    ? "Switch to light mode"
+                    : "Switch to dark mode"
+                }
+                className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                {resolvedTheme === "dark" ? <SunIcon className="size-4" /> : <MoonIcon className="size-4" />}
+              </button>
+            </InfoTooltip>
           )}
         </div>
       </header>
@@ -1136,35 +1263,59 @@ export default function ChatPage() {
 
           {/* Tab bar */}
           <div className="flex shrink-0 items-center gap-1 border-b px-3 py-1.5">
-            <button
-              onClick={() => setActiveTab("chat")}
-              className={cn(
-                "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
-                activeTab === "chat"
-                  ? "bg-muted text-foreground"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-              )}
+            <InfoTooltip
+              content={
+                <>
+                  <b>Chat</b>
+                  <br />
+                  Open-ended conversation with Kady. The orchestrator can
+                  delegate work to an expert subprocess, run code in the
+                  sandbox, and call tools.
+                </>
+              }
             >
-              <MessageSquareTextIcon className="size-3.5" />
-              Chat
-              {messages.length > 0 && (
-                <span className="ml-0.5 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary tabular-nums">
-                  {messages.filter(m => m.role === "user").length}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => setActiveTab("workflows")}
-              className={cn(
-                "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
-                activeTab === "workflows"
-                  ? "bg-muted text-foreground"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-              )}
+              <button
+                onClick={() => setActiveTab("chat")}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+                  activeTab === "chat"
+                    ? "bg-muted text-foreground"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                )}
+              >
+                <MessageSquareTextIcon className="size-3.5" />
+                Chat
+                {messages.length > 0 && (
+                  <span className="ml-0.5 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary tabular-nums">
+                    {messages.filter(m => m.role === "user").length}
+                  </span>
+                )}
+              </button>
+            </InfoTooltip>
+            <InfoTooltip
+              content={
+                <>
+                  <b>Workflows</b>
+                  <br />
+                  Pre-built scientific pipelines (e.g. RNA-seq, literature
+                  review). Pick a template, attach inputs, and launch — they
+                  run in the same chat.
+                </>
+              }
             >
-              <WorkflowIcon className="size-3.5" />
-              Workflows
-            </button>
+              <button
+                onClick={() => setActiveTab("workflows")}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+                  activeTab === "workflows"
+                    ? "bg-muted text-foreground"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                )}
+              >
+                <WorkflowIcon className="size-3.5" />
+                Workflows
+              </button>
+            </InfoTooltip>
           </div>
 
           {/* Tab content */}

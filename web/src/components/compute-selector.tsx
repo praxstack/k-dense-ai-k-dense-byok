@@ -48,6 +48,148 @@ function TierDot({ tier }: { tier: string }) {
   );
 }
 
+/**
+ * Picker UI for compute selection — no trigger / no popover wrapper.
+ */
+export function ComputePickerBody({
+  selected,
+  onChange,
+  modalConfigured = true,
+  onSelected,
+}: {
+  selected: ModalInstance | null;
+  onChange: (instance: ModalInstance | null) => void;
+  modalConfigured?: boolean;
+  onSelected?: () => void;
+}) {
+  const effective = selected ?? LOCAL_INSTANCE;
+
+  const handleSelect = (instance: ModalInstance) => {
+    if (instance.id !== "local" && !modalConfigured) return;
+    onChange(instance.id === "local" ? null : instance);
+    onSelected?.();
+  };
+
+  return (
+    <>
+      {!modalConfigured && (
+        <div className="flex items-start gap-2.5 border-b bg-amber-500/5 px-3 py-2.5">
+          <div className="mt-0.5 size-1.5 shrink-0 rounded-full bg-amber-500" />
+          <div className="min-w-0 text-[11px] leading-relaxed text-muted-foreground">
+            <span className="font-medium text-foreground">Modal API keys not configured.</span>{" "}
+            Set <code className="rounded bg-muted px-1 py-0.5 text-[10px] font-mono">MODAL_TOKEN_ID</code> and{" "}
+            <code className="rounded bg-muted px-1 py-0.5 text-[10px] font-mono">MODAL_TOKEN_SECRET</code> in your{" "}
+            <code className="rounded bg-muted px-1 py-0.5 text-[10px] font-mono">.env</code> file.
+            <a
+              href="https://modal.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="ml-1 inline-flex items-center gap-0.5 font-medium text-primary hover:underline"
+            >
+              Create an account at modal.com
+              <ExternalLinkIcon className="size-2.5" />
+            </a>
+          </div>
+        </div>
+      )}
+
+      <TooltipProvider>
+        <div className="max-h-80 overflow-y-auto py-1">
+          {[LOCAL_INSTANCE, "divider" as const, ...ALL_INSTANCES].map((item) => {
+            if (item === "divider") {
+              return (
+                <div key="divider" className="my-1 border-t px-3 pt-1.5 pb-0.5">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Modal Compute
+                  </span>
+                </div>
+              );
+            }
+            const instance = item;
+            const isSelected = effective.id === instance.id;
+            const styles = TIER_STYLES[instance.tier];
+
+            const isLocal = instance.id === "local";
+            const enabled = isLocal || modalConfigured;
+
+            const row = (
+              <div
+                key={instance.id}
+                onClick={() => handleSelect(instance)}
+                className={cn(
+                  "flex items-start gap-2.5 px-3 py-2.5 text-xs transition-colors",
+                  enabled
+                    ? "cursor-pointer hover:bg-muted/60"
+                    : "cursor-not-allowed opacity-50",
+                  isSelected && enabled && "bg-muted/40"
+                )}
+              >
+                <div
+                  className={cn(
+                    "mt-0.5 flex size-3.5 shrink-0 items-center justify-center rounded-full border transition-colors",
+                    isSelected && enabled
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border bg-background"
+                  )}
+                >
+                  {isSelected && enabled && <CheckIcon className="size-2" />}
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <TierDot tier={instance.tier} />
+                    <span className={cn("font-semibold", enabled ? "text-foreground" : "text-muted-foreground")}>{instance.label}</span>
+                    {isLocal ? (
+                      <span className="text-muted-foreground">Sandbox</span>
+                    ) : instance.vram ? (
+                      <span className="text-muted-foreground">{instance.vram}GB VRAM</span>
+                    ) : (
+                      <span className="text-muted-foreground">No GPU</span>
+                    )}
+                    {!isLocal && (
+                      <span className={cn("ml-auto text-[10px] font-medium tabular-nums", enabled ? styles.badge : "text-muted-foreground")}>
+                        ${instance.pricePerHour}/hr
+                      </span>
+                    )}
+                    {isLocal && (
+                      <span className={cn("ml-auto text-[10px] font-medium", styles.badge)}>Free</span>
+                    )}
+                  </div>
+                  <p className="mt-0.5 text-muted-foreground/80 leading-relaxed">{instance.description}</p>
+                </div>
+              </div>
+            );
+
+            if (!enabled) {
+              return (
+                <Tooltip key={instance.id}>
+                  <TooltipTrigger asChild>{row}</TooltipTrigger>
+                  <TooltipContent side="right" className="max-w-56">
+                    Set MODAL_TOKEN_ID and MODAL_TOKEN_SECRET in .env to enable compute
+                  </TooltipContent>
+                </Tooltip>
+              );
+            }
+
+            return row;
+          })}
+        </div>
+      </TooltipProvider>
+
+      <div className="flex items-center gap-3 border-t px-3 py-1.5 flex-wrap">
+        {Object.entries(TIER_STYLES)
+          .filter(([tier]) => tier !== "local")
+          .map(([tier, s]) => (
+            <span key={tier} className="flex items-center gap-1 text-[10px] text-muted-foreground capitalize">
+              <span className={cn("inline-block size-1.5 rounded-full", s.dot)} />
+              {tier}
+            </span>
+          ))}
+      </div>
+    </>
+  );
+}
+
 export function ComputeSelector({
   selected,
   onChange,
@@ -59,12 +201,6 @@ export function ComputeSelector({
 }) {
   const [open, setOpen] = useState(false);
   const effective = selected ?? LOCAL_INSTANCE;
-
-  const handleSelect = (instance: ModalInstance) => {
-    if (instance.id !== "local" && !modalConfigured) return;
-    onChange(instance.id === "local" ? null : instance);
-    setOpen(false);
-  };
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -113,132 +249,17 @@ export function ComputeSelector({
         className="w-80 p-0 overflow-hidden rounded-xl shadow-xl"
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
-        {/* Header */}
         <div className="flex items-center justify-between border-b px-3 py-2">
           <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             Compute
           </span>
         </div>
-
-        {!modalConfigured && (
-          <div className="flex items-start gap-2.5 border-b bg-amber-500/5 px-3 py-2.5">
-            <div className="mt-0.5 size-1.5 shrink-0 rounded-full bg-amber-500" />
-            <div className="min-w-0 text-[11px] leading-relaxed text-muted-foreground">
-              <span className="font-medium text-foreground">Modal API keys not configured.</span>{" "}
-              Set <code className="rounded bg-muted px-1 py-0.5 text-[10px] font-mono">MODAL_TOKEN_ID</code> and{" "}
-              <code className="rounded bg-muted px-1 py-0.5 text-[10px] font-mono">MODAL_TOKEN_SECRET</code> in your{" "}
-              <code className="rounded bg-muted px-1 py-0.5 text-[10px] font-mono">.env</code> file.
-              <a
-                href="https://modal.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="ml-1 inline-flex items-center gap-0.5 font-medium text-primary hover:underline"
-              >
-                Create an account at modal.com
-                <ExternalLinkIcon className="size-2.5" />
-              </a>
-            </div>
-          </div>
-        )}
-
-        {/* Instance list */}
-        <TooltipProvider>
-          <div className="py-1">
-            {[LOCAL_INSTANCE, "divider" as const, ...ALL_INSTANCES].map((item, idx) => {
-              if (item === "divider") {
-                return (
-                  <div key="divider" className="my-1 border-t px-3 pt-1.5 pb-0.5">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      Modal Compute
-                    </span>
-                  </div>
-                );
-              }
-              const instance = item;
-              const isSelected = effective.id === instance.id;
-              const styles = TIER_STYLES[instance.tier];
-
-              const isLocal = instance.id === "local";
-              const enabled = isLocal || modalConfigured;
-
-              const row = (
-                <div
-                  key={instance.id}
-                  onClick={() => handleSelect(instance)}
-                  className={cn(
-                    "flex items-start gap-2.5 px-3 py-2.5 text-xs transition-colors",
-                    enabled
-                      ? "cursor-pointer hover:bg-muted/60"
-                      : "cursor-not-allowed opacity-50",
-                    isSelected && enabled && "bg-muted/40"
-                  )}
-                >
-                  {/* Selection indicator */}
-                  <div
-                    className={cn(
-                      "mt-0.5 flex size-3.5 shrink-0 items-center justify-center rounded-full border transition-colors",
-                      isSelected && enabled
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "border-border bg-background"
-                    )}
-                  >
-                    {isSelected && enabled && <CheckIcon className="size-2" />}
-                  </div>
-
-                  <div className="min-w-0 flex-1">
-                    {/* Name row */}
-                    <div className="flex items-center gap-1.5">
-                      <TierDot tier={instance.tier} />
-                      <span className={cn("font-semibold", enabled ? "text-foreground" : "text-muted-foreground")}>{instance.label}</span>
-                      {isLocal ? (
-                        <span className="text-muted-foreground">Sandbox</span>
-                      ) : instance.vram ? (
-                        <span className="text-muted-foreground">{instance.vram}GB VRAM</span>
-                      ) : (
-                        <span className="text-muted-foreground">No GPU</span>
-                      )}
-                      {!isLocal && (
-                        <span className={cn("ml-auto text-[10px] font-medium tabular-nums", enabled ? styles.badge : "text-muted-foreground")}>
-                          ${instance.pricePerHour}/hr
-                        </span>
-                      )}
-                      {isLocal && (
-                        <span className={cn("ml-auto text-[10px] font-medium", styles.badge)}>Free</span>
-                      )}
-                    </div>
-                    {/* Description */}
-                    <p className="mt-0.5 text-muted-foreground/80 leading-relaxed">{instance.description}</p>
-                  </div>
-                </div>
-              );
-
-              if (!enabled) {
-                return (
-                  <Tooltip key={instance.id}>
-                    <TooltipTrigger asChild>{row}</TooltipTrigger>
-                    <TooltipContent side="right" className="max-w-56">
-                      Set MODAL_TOKEN_ID and MODAL_TOKEN_SECRET in .env to enable compute
-                    </TooltipContent>
-                  </Tooltip>
-                );
-              }
-
-              return row;
-            })}
-          </div>
-        </TooltipProvider>
-
-        {/* Footer legend */}
-        <div className="flex items-center gap-3 border-t px-3 py-1.5 flex-wrap">
-          {Object.entries(TIER_STYLES)
-            .filter(([tier]) => tier !== "local")
-            .map(([tier, s]) => (
-              <span key={tier} className="flex items-center gap-1 text-[10px] text-muted-foreground capitalize">
-                <span className={cn("inline-block size-1.5 rounded-full", s.dot)} />
-                {tier}
-              </span>
-            ))}
-        </div>
+        <ComputePickerBody
+          selected={selected}
+          onChange={onChange}
+          modalConfigured={modalConfigured}
+          onSelected={() => setOpen(false)}
+        />
       </PopoverContent>
     </Popover>
   );

@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 import models from "@/data/models.json";
 import { useModels } from "@/lib/use-models";
 
@@ -348,37 +349,55 @@ export function PairedModelSelector({
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <div
-          className={cn(
-            "flex min-w-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 cursor-pointer transition-colors text-xs select-none",
-            open
-              ? "border-border bg-muted/60"
-              : "border-transparent hover:border-border hover:bg-muted/40"
-          )}
-          role="button"
-          tabIndex={0}
-          title={`Orchestrator: ${orchestrator.label} · Expert: ${expert.label}`}
-        >
-          <BrainCircuitIcon className="size-3 shrink-0 text-muted-foreground" />
-          <TierDot tier={orchestrator.tier} />
-          <span className="min-w-0 truncate font-medium text-foreground">
-            {orchestrator.label}
-          </span>
-          <span className="text-muted-foreground/60">·</span>
-          <CpuIcon className="size-3 shrink-0 text-muted-foreground" />
-          <TierDot tier={expert.tier} />
-          <span className="min-w-0 truncate font-medium text-foreground">
-            {expert.label}
-          </span>
-          <ChevronDownIcon
+      <InfoTooltip
+        disabled={open}
+        content={
+          <>
+            <b>Models</b>
+            <br />
+            <span className="opacity-80">Orchestrator</span>:{" "}
+            <b>{orchestrator.label}</b> plans the turn and decides when to
+            delegate.
+            <br />
+            <span className="opacity-80">Expert</span>: <b>{expert.label}</b>{" "}
+            runs delegated tasks (long-context reads, tool-heavy work) in the
+            Gemini CLI subprocess.
+            <br />
+            Click to change either.
+          </>
+        }
+      >
+        <PopoverTrigger asChild>
+          <div
             className={cn(
-              "size-3 shrink-0 text-muted-foreground transition-transform ml-0.5",
-              open && "rotate-180"
+              "flex min-w-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 cursor-pointer transition-colors text-xs select-none",
+              open
+                ? "border-border bg-muted/60"
+                : "border-transparent hover:border-border hover:bg-muted/40"
             )}
-          />
-        </div>
-      </PopoverTrigger>
+            role="button"
+            tabIndex={0}
+          >
+            <BrainCircuitIcon className="size-3 shrink-0 text-muted-foreground" />
+            <TierDot tier={orchestrator.tier} />
+            <span className="min-w-0 truncate font-medium text-foreground">
+              {orchestrator.label}
+            </span>
+            <span className="text-muted-foreground/60">·</span>
+            <CpuIcon className="size-3 shrink-0 text-muted-foreground" />
+            <TierDot tier={expert.tier} />
+            <span className="min-w-0 truncate font-medium text-foreground">
+              {expert.label}
+            </span>
+            <ChevronDownIcon
+              className={cn(
+                "size-3 shrink-0 text-muted-foreground transition-transform ml-0.5",
+                open && "rotate-180"
+              )}
+            />
+          </div>
+        </PopoverTrigger>
+      </InfoTooltip>
 
       <PopoverContent
         side="top"

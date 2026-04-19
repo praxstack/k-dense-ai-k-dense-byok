@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckIcon, WandSparklesIcon, XIcon, ChevronDownIcon, SearchIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -8,16 +8,20 @@ import type { Skill } from "@/lib/use-skills";
 
 export type { Skill };
 
-export function SkillsSelector({
+/**
+ * Picker UI for skills — no trigger / no popover wrapper.
+ */
+export function SkillsPickerBody({
   skills,
   selected,
   onChange,
+  autoFocus = false,
 }: {
   skills: Skill[];
   selected: Skill[];
   onChange: (skills: Skill[]) => void;
+  autoFocus?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -45,6 +49,110 @@ export function SkillsSelector({
     [selected, selectedIds, onChange]
   );
 
+  const clearAll = useCallback(() => onChange([]), [onChange]);
+
+  useEffect(() => {
+    if (autoFocus) {
+      const t = setTimeout(() => inputRef.current?.focus(), 50);
+      return () => clearTimeout(t);
+    }
+  }, [autoFocus]);
+
+  return (
+    <>
+      <div className="flex items-center gap-2 border-b px-3 py-2">
+        <SearchIcon className="size-3.5 shrink-0 text-muted-foreground" />
+        <input
+          ref={inputRef}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search skills..."
+          className="flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
+        />
+        {selected.length > 0 && (
+          <button
+            onClick={clearAll}
+            className="text-[10px] text-muted-foreground hover:text-destructive transition-colors whitespace-nowrap"
+          >
+            Clear all
+          </button>
+        )}
+      </div>
+
+      <div className="max-h-72 overflow-y-auto py-1">
+        {filtered.length === 0 ? (
+          <div className="py-8 text-center text-xs text-muted-foreground">
+            No skills found
+          </div>
+        ) : (
+          filtered.map((skill) => {
+            const isSelected = selectedIds.has(skill.id);
+            return (
+              <div
+                key={skill.id}
+                onClick={() => toggle(skill)}
+                className={cn(
+                  "flex cursor-pointer items-start gap-2.5 px-3 py-2.5 text-xs transition-colors hover:bg-muted/60",
+                  isSelected && "bg-muted/40"
+                )}
+              >
+                <div
+                  className={cn(
+                    "mt-0.5 flex size-3.5 shrink-0 items-center justify-center rounded border transition-colors",
+                    isSelected
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border bg-background"
+                  )}
+                >
+                  {isSelected && <CheckIcon className="size-2.5" />}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-medium text-foreground">{skill.name}</span>
+                    {skill.author && (
+                      <span className="text-[10px] text-muted-foreground/60">
+                        by {skill.author}
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-0.5 line-clamp-2 text-muted-foreground/80 leading-relaxed">
+                    {skill.description}
+                  </p>
+                  {skill.compatibility && (
+                    <span className="mt-1 inline-block rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+                      {skill.compatibility}
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      <div className="flex items-center justify-between border-t px-3 py-1.5">
+        <span className="text-[10px] text-muted-foreground">
+          Expert agent skills
+        </span>
+        <span className="text-[10px] text-muted-foreground">
+          {filtered.length} of {skills.length} skills
+        </span>
+      </div>
+    </>
+  );
+}
+
+export function SkillsSelector({
+  skills,
+  selected,
+  onChange,
+}: {
+  skills: Skill[];
+  selected: Skill[];
+  onChange: (skills: Skill[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
   const removeSelected = useCallback(
     (id: string, e: React.MouseEvent) => {
       e.stopPropagation();
@@ -61,14 +169,8 @@ export function SkillsSelector({
     [onChange]
   );
 
-  const handleOpenChange = (next: boolean) => {
-    setOpen(next);
-    if (!next) setSearch("");
-    if (next) setTimeout(() => inputRef.current?.focus(), 50);
-  };
-
   return (
-    <Popover open={open} onOpenChange={handleOpenChange}>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <div
           className={cn(
@@ -147,87 +249,12 @@ export function SkillsSelector({
         className="w-[420px] max-w-[calc(100vw-2rem)] p-0 overflow-hidden rounded-xl shadow-xl"
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
-        {/* Search bar */}
-        <div className="flex items-center gap-2 border-b px-3 py-2">
-          <SearchIcon className="size-3.5 shrink-0 text-muted-foreground" />
-          <input
-            ref={inputRef}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search skills..."
-            className="flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
-          />
-          {selected.length > 0 && (
-            <button
-              onClick={clearAll}
-              className="text-[10px] text-muted-foreground hover:text-destructive transition-colors whitespace-nowrap"
-            >
-              Clear all
-            </button>
-          )}
-        </div>
-
-        {/* Skills list */}
-        <div className="max-h-72 overflow-y-auto py-1">
-          {filtered.length === 0 ? (
-            <div className="py-8 text-center text-xs text-muted-foreground">
-              No skills found
-            </div>
-          ) : (
-            filtered.map((skill) => {
-              const isSelected = selectedIds.has(skill.id);
-              return (
-                <div
-                  key={skill.id}
-                  onClick={() => toggle(skill)}
-                  className={cn(
-                    "flex cursor-pointer items-start gap-2.5 px-3 py-2.5 text-xs transition-colors hover:bg-muted/60",
-                    isSelected && "bg-muted/40"
-                  )}
-                >
-                  <div
-                    className={cn(
-                      "mt-0.5 flex size-3.5 shrink-0 items-center justify-center rounded border transition-colors",
-                      isSelected
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "border-border bg-background"
-                    )}
-                  >
-                    {isSelected && <CheckIcon className="size-2.5" />}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-medium text-foreground">{skill.name}</span>
-                      {skill.author && (
-                        <span className="text-[10px] text-muted-foreground/60">
-                          by {skill.author}
-                        </span>
-                      )}
-                    </div>
-                    <p className="mt-0.5 line-clamp-2 text-muted-foreground/80 leading-relaxed">
-                      {skill.description}
-                    </p>
-                    {skill.compatibility && (
-                      <span className="mt-1 inline-block rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
-                        {skill.compatibility}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-between border-t px-3 py-1.5">
-          <span className="text-[10px] text-muted-foreground">
-            Expert agent skills
-          </span>
-          <span className="text-[10px] text-muted-foreground">
-            {filtered.length} of {skills.length} skills
-          </span>
-        </div>
+        <SkillsPickerBody
+          skills={skills}
+          selected={selected}
+          onChange={onChange}
+          autoFocus={open}
+        />
       </PopoverContent>
     </Popover>
   );

@@ -17,6 +17,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 import {
   FileIcon,
   FileTextIcon,
@@ -572,37 +573,96 @@ export function FileTreePanel({
       {/* Header */}
       <div className="flex items-center justify-between border-b px-3 py-2.5">
         <div className="flex items-center gap-2">
-          <FolderOpenIcon className="size-4 text-blue-500" />
-          <span className="font-semibold text-sm">Sandbox</span>
-          {totalFiles > 0 && (
-            <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-600 tabular-nums">
-              {totalFiles}
-            </span>
-          )}
+          <InfoTooltip
+            content={
+              <>
+                <b>Sandbox</b>
+                <br />
+                Shared working directory the agent can read from and write to.
+                Drop files/folders here or upload — they persist across turns
+                in this project.
+              </>
+            }
+          >
+            <div className="flex items-center gap-2 cursor-help">
+              <FolderOpenIcon className="size-4 text-blue-500" />
+              <span className="font-semibold text-sm">Sandbox</span>
+              {totalFiles > 0 && (
+                <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-600 tabular-nums">
+                  {totalFiles}
+                </span>
+              )}
+            </div>
+          </InfoTooltip>
         </div>
         <div className="flex items-center gap-0.5">
           <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileChange} />
           {/* @ts-expect-error -- webkitdirectory is non-standard but supported in all major browsers */}
           <input ref={dirInputRef} type="file" webkitdirectory="" className="hidden" onChange={handleFileChange} />
           {totalFiles > 0 && onOrganize && (
-            <button onClick={onOrganize} className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" title="Auto-organize files">
-              <WandSparklesIcon className="size-3.5" />
-            </button>
+            <InfoTooltip
+              content={
+                <>
+                  <b>Auto-organize files</b>
+                  <br />
+                  Ask the agent to tidy the sandbox — group related files into
+                  folders (raw data, figures, notebooks, results). Does not
+                  delete anything.
+                </>
+              }
+            >
+              <button onClick={onOrganize} aria-label="Auto-organize files" className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+                <WandSparklesIcon className="size-3.5" />
+              </button>
+            </InfoTooltip>
           )}
           {totalFiles > 0 && (
-            <button onClick={onDownloadAll} className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" title="Download all as zip">
-              <ArchiveIcon className="size-3.5" />
-            </button>
-          )}
-          <button onClick={() => setCreatingDirIn("")} className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" title="New folder">
-            <FolderPlusIcon className="size-3.5" />
-          </button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button disabled={uploading} className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50" title="Upload files or folder">
-                {uploading ? <LoaderIcon className="size-3.5 animate-spin" /> : <UploadIcon className="size-3.5" />}
+            <InfoTooltip
+              content={
+                <>
+                  <b>Download all as zip</b>
+                  <br />
+                  Package the entire sandbox into a <kbd>.zip</kbd> for archiving,
+                  sharing with collaborators, or your lab notebook.
+                </>
+              }
+            >
+              <button onClick={onDownloadAll} aria-label="Download all as zip" className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+                <ArchiveIcon className="size-3.5" />
               </button>
-            </DropdownMenuTrigger>
+            </InfoTooltip>
+          )}
+          <InfoTooltip
+            content={
+              <>
+                <b>New folder</b>
+                <br />
+                Create a subdirectory at the sandbox root. You can also drag
+                files between folders to organize them.
+              </>
+            }
+          >
+            <button onClick={() => setCreatingDirIn("")} aria-label="New folder" className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+              <FolderPlusIcon className="size-3.5" />
+            </button>
+          </InfoTooltip>
+          <DropdownMenu>
+            <InfoTooltip
+              content={
+                <>
+                  <b>Upload files or folder</b>
+                  <br />
+                  Add data to the sandbox. Folders preserve their structure.
+                  Drag-and-drop anywhere in this panel also works.
+                </>
+              }
+            >
+              <DropdownMenuTrigger asChild>
+                <button disabled={uploading} aria-label="Upload files or folder" className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50">
+                  {uploading ? <LoaderIcon className="size-3.5 animate-spin" /> : <UploadIcon className="size-3.5" />}
+                </button>
+              </DropdownMenuTrigger>
+            </InfoTooltip>
             <DropdownMenuContent align="end" className="min-w-[140px]">
               <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
                 <UploadIcon className="mr-2 size-3.5" />
@@ -614,12 +674,25 @@ export function FileTreePanel({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <button onClick={onRefresh} className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" title="Refresh">
-            <RefreshCwIcon className="size-3.5" />
-          </button>
-          <button onClick={onClose} className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" title="Close">
-            <XIcon className="size-3.5" />
-          </button>
+          <InfoTooltip
+            content={
+              <>
+                <b>Refresh</b>
+                <br />
+                Reload the file tree from disk. Useful if you edited files
+                outside of Kady.
+              </>
+            }
+          >
+            <button onClick={onRefresh} aria-label="Refresh" className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+              <RefreshCwIcon className="size-3.5" />
+            </button>
+          </InfoTooltip>
+          <InfoTooltip content="Hide the sandbox panel">
+            <button onClick={onClose} aria-label="Close sandbox panel" className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+              <XIcon className="size-3.5" />
+            </button>
+          </InfoTooltip>
         </div>
       </div>
 

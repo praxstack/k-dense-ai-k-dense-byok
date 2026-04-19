@@ -140,11 +140,6 @@ async def delegate_task(
         env.pop(var, None)
 
     prev_headers = env.get("GEMINI_CLI_CUSTOM_HEADERS", "").strip()
-    env["GEMINI_CLI_CUSTOM_HEADERS"] = (
-        f"{prev_headers}, {_CLI_OPENROUTER_HEADERS}"
-        if prev_headers
-        else _CLI_OPENROUTER_HEADERS
-    )
 
     paths = active_paths()
     # Some models (e.g. GPT-5.4 Nano) pass `working_directory="."` or other
@@ -201,6 +196,27 @@ async def delegate_task(
     if delegation_id:
         env.setdefault("KADY_EXPERT_ID", delegation_id)
         env.setdefault("KADY_EXPERT_LABEL", f"Expert #{delegation_id}")
+
+    # Build the final GEMINI_CLI_CUSTOM_HEADERS value now that we know the
+    # Kady correlation ids. The LiteLLM proxy's cost callback reads these
+    # off the inbound HTTP request and writes one ledger entry per expert
+    # completion, tagged back to the right session/turn/delegation.
+    kady_header_parts = [
+        f"X-Kady-Role: expert",
+        f"X-Kady-Project: {paths.id}",
+    ]
+    if session_id:
+        kady_header_parts.append(f"X-Kady-Session-Id: {session_id}")
+    if turn_id:
+        kady_header_parts.append(f"X-Kady-Turn-Id: {turn_id}")
+    if delegation_id:
+        kady_header_parts.append(f"X-Kady-Delegation-Id: {delegation_id}")
+    header_segments: list[str] = []
+    if prev_headers:
+        header_segments.append(prev_headers)
+    header_segments.append(_CLI_OPENROUTER_HEADERS)
+    header_segments.extend(kady_header_parts)
+    env["GEMINI_CLI_CUSTOM_HEADERS"] = ", ".join(header_segments)
 
     sandbox_venv = cwd / ".venv"
     if sandbox_venv.is_dir():

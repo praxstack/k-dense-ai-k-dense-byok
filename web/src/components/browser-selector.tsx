@@ -29,13 +29,150 @@ import {
 } from "@/lib/use-settings";
 
 /** Label for the configured profile, falling back to the directory id. */
-function profileLabel(
+export function profileLabel(
   profileId: string | null,
   profiles: ChromeProfile[],
 ): string | null {
   if (!profileId) return null;
   const match = profiles.find((p) => p.id === profileId);
   return match?.name ?? profileId;
+}
+
+/**
+ * Picker UI for browser automation — no trigger / no popover wrapper.
+ * Reads/writes settings via the shared hooks.
+ */
+export function BrowserPickerBody() {
+  const bu = useBrowserUseSettings();
+  const profiles = useChromeProfiles();
+
+  const enabled = bu.config.enabled;
+  const headed = bu.config.headed;
+  const profileId = bu.config.profile;
+  const usingRealChrome = Boolean(profileId);
+
+  const toggleRealChrome = (v: boolean) => {
+    if (v) {
+      const first = profiles.profiles[0]?.id ?? "Default";
+      bu.save({ profile: first, headed: true });
+    } else {
+      bu.save({ profile: null });
+    }
+  };
+
+  return (
+    <div className="flex flex-col">
+      <label className="flex items-start justify-between gap-3 px-3 py-2.5 hover:bg-muted/40 cursor-pointer">
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5 text-xs font-medium">
+            <GlobeIcon className="size-3 shrink-0 text-muted-foreground" />
+            Enable browser automation
+          </div>
+          <p className="mt-0.5 text-[11px] text-muted-foreground leading-relaxed">
+            Register the browser-use MCP so Kady and the expert can drive a
+            browser.
+          </p>
+        </div>
+        <Switch
+          checked={enabled}
+          onCheckedChange={(v) => bu.save({ enabled: Boolean(v) })}
+          disabled={bu.saving}
+        />
+      </label>
+
+      <label
+        className={cn(
+          "flex items-start justify-between gap-3 border-t px-3 py-2.5 hover:bg-muted/40 cursor-pointer",
+          !enabled && "opacity-50 pointer-events-none",
+        )}
+      >
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5 text-xs font-medium">
+            <ChromeIcon className="size-3 shrink-0 text-muted-foreground" />
+            Use my real Chrome (with logins)
+          </div>
+          <p className="mt-0.5 text-[11px] text-muted-foreground leading-relaxed">
+            Attach to your installed Chrome so cookies, sessions, and extensions
+            come along. Close Chrome first.
+          </p>
+        </div>
+        <Switch
+          checked={usingRealChrome}
+          onCheckedChange={toggleRealChrome}
+          disabled={bu.saving || !enabled}
+        />
+      </label>
+
+      {usingRealChrome && profiles.profiles.length > 0 && (
+        <div
+          className={cn(
+            "flex items-start justify-between gap-3 border-t px-3 py-2.5",
+            !enabled && "opacity-50 pointer-events-none",
+          )}
+        >
+          <div className="min-w-0">
+            <div className="text-xs font-medium">Profile</div>
+            <p className="mt-0.5 text-[11px] text-muted-foreground leading-relaxed">
+              Which Chrome profile to attach to.
+            </p>
+          </div>
+          <Select
+            value={profileId ?? ""}
+            onValueChange={(v) => bu.save({ profile: v })}
+            disabled={bu.saving || !enabled}
+          >
+            <SelectTrigger className="w-40 h-8 text-xs">
+              <SelectValue placeholder="Pick profile" />
+            </SelectTrigger>
+            <SelectContent>
+              {profiles.profiles.map((p) => (
+                <SelectItem key={p.id} value={p.id} className="text-xs">
+                  <div className="flex flex-col items-start">
+                    <span className="font-medium">{p.name}</span>
+                    {p.email && p.email !== p.name ? (
+                      <span className="text-[10px] text-muted-foreground">
+                        {p.email}
+                      </span>
+                    ) : null}
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
+      <label
+        className={cn(
+          "flex items-start justify-between gap-3 border-t px-3 py-2.5 hover:bg-muted/40 cursor-pointer",
+          (!enabled || usingRealChrome) && "opacity-50 pointer-events-none",
+        )}
+      >
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5 text-xs font-medium">
+            <MonitorIcon className="size-3 shrink-0 text-muted-foreground" />
+            Show browser window
+          </div>
+          <p className="mt-0.5 text-[11px] text-muted-foreground leading-relaxed">
+            {usingRealChrome
+              ? "Real Chrome always shows its window."
+              : "Launch Chromium with a visible window. Off = headless."}
+          </p>
+        </div>
+        <Switch
+          checked={usingRealChrome ? true : headed}
+          onCheckedChange={(v) => bu.save({ headed: Boolean(v) })}
+          disabled={bu.saving || !enabled || usingRealChrome}
+        />
+      </label>
+
+      <div className="border-t bg-muted/30 px-3 py-2 text-[10px] text-muted-foreground leading-relaxed">
+        More options (session name) live in{" "}
+        <span className="font-medium text-foreground">Settings</span> →{" "}
+        <span className="font-medium text-foreground">Browser</span>.
+      </div>
+    </div>
+  );
 }
 
 export function BrowserSelector() {
@@ -60,17 +197,6 @@ export function BrowserSelector() {
       : headed
         ? "Browser: Headed"
         : "Browser: On";
-
-  // Toggling "Use my real Chrome" without an existing selection picks the
-  // first detected profile (or "Default" as a last resort).
-  const toggleRealChrome = (v: boolean) => {
-    if (v) {
-      const first = profiles.profiles[0]?.id ?? "Default";
-      bu.save({ profile: first, headed: true });
-    } else {
-      bu.save({ profile: null });
-    }
-  };
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -132,118 +258,7 @@ export function BrowserSelector() {
             browser-use CLI
           </span>
         </div>
-
-        <div className="flex flex-col">
-          <label className="flex items-start justify-between gap-3 px-3 py-2.5 hover:bg-muted/40 cursor-pointer">
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5 text-xs font-medium">
-                <GlobeIcon className="size-3 shrink-0 text-muted-foreground" />
-                Enable browser automation
-              </div>
-              <p className="mt-0.5 text-[11px] text-muted-foreground leading-relaxed">
-                Register the browser-use MCP so Kady and the expert can drive
-                a browser.
-              </p>
-            </div>
-            <Switch
-              checked={enabled}
-              onCheckedChange={(v) => bu.save({ enabled: Boolean(v) })}
-              disabled={bu.saving}
-            />
-          </label>
-
-          <label
-            className={cn(
-              "flex items-start justify-between gap-3 border-t px-3 py-2.5 hover:bg-muted/40 cursor-pointer",
-              !enabled && "opacity-50 pointer-events-none",
-            )}
-          >
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5 text-xs font-medium">
-                <ChromeIcon className="size-3 shrink-0 text-muted-foreground" />
-                Use my real Chrome (with logins)
-              </div>
-              <p className="mt-0.5 text-[11px] text-muted-foreground leading-relaxed">
-                Attach to your installed Chrome so cookies, sessions, and
-                extensions come along. Close Chrome first.
-              </p>
-            </div>
-            <Switch
-              checked={usingRealChrome}
-              onCheckedChange={toggleRealChrome}
-              disabled={bu.saving || !enabled}
-            />
-          </label>
-
-          {usingRealChrome && profiles.profiles.length > 0 && (
-            <div
-              className={cn(
-                "flex items-start justify-between gap-3 border-t px-3 py-2.5",
-                !enabled && "opacity-50 pointer-events-none",
-              )}
-            >
-              <div className="min-w-0">
-                <div className="text-xs font-medium">Profile</div>
-                <p className="mt-0.5 text-[11px] text-muted-foreground leading-relaxed">
-                  Which Chrome profile to attach to.
-                </p>
-              </div>
-              <Select
-                value={profileId ?? ""}
-                onValueChange={(v) => bu.save({ profile: v })}
-                disabled={bu.saving || !enabled}
-              >
-                <SelectTrigger className="w-40 h-8 text-xs">
-                  <SelectValue placeholder="Pick profile" />
-                </SelectTrigger>
-                <SelectContent>
-                  {profiles.profiles.map((p) => (
-                    <SelectItem key={p.id} value={p.id} className="text-xs">
-                      <div className="flex flex-col items-start">
-                        <span className="font-medium">{p.name}</span>
-                        {p.email && p.email !== p.name ? (
-                          <span className="text-[10px] text-muted-foreground">
-                            {p.email}
-                          </span>
-                        ) : null}
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          <label
-            className={cn(
-              "flex items-start justify-between gap-3 border-t px-3 py-2.5 hover:bg-muted/40 cursor-pointer",
-              (!enabled || usingRealChrome) && "opacity-50 pointer-events-none",
-            )}
-          >
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5 text-xs font-medium">
-                <MonitorIcon className="size-3 shrink-0 text-muted-foreground" />
-                Show browser window
-              </div>
-              <p className="mt-0.5 text-[11px] text-muted-foreground leading-relaxed">
-                {usingRealChrome
-                  ? "Real Chrome always shows its window."
-                  : "Launch Chromium with a visible window. Off = headless."}
-              </p>
-            </div>
-            <Switch
-              checked={usingRealChrome ? true : headed}
-              onCheckedChange={(v) => bu.save({ headed: Boolean(v) })}
-              disabled={bu.saving || !enabled || usingRealChrome}
-            />
-          </label>
-        </div>
-
-        <div className="border-t bg-muted/30 px-3 py-2 text-[10px] text-muted-foreground leading-relaxed">
-          More options (session name) live in{" "}
-          <span className="font-medium text-foreground">Settings</span> →{" "}
-          <span className="font-medium text-foreground">Browser</span>.
-        </div>
+        <BrowserPickerBody />
       </PopoverContent>
     </Popover>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckIcon, DatabaseIcon, XIcon, ChevronDownIcon, SearchIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import databases from "@/data/databases.json";
@@ -41,14 +41,19 @@ function DomainDot({ domain }: { domain: string }) {
   );
 }
 
-export function DatabaseSelector({
+/**
+ * Picker UI for data sources — no trigger / no popover wrapper, so it can be
+ * composed inside other containers (e.g. the unified AddContextMenu).
+ */
+export function DatabasePickerBody({
   selected,
   onChange,
+  autoFocus = false,
 }: {
   selected: Database[];
   onChange: (dbs: Database[]) => void;
+  autoFocus?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [activeDomain, setActiveDomain] = useState<"all" | "science" | "finance">("all");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -90,6 +95,140 @@ export function DatabaseSelector({
     [selected, selectedIds, onChange]
   );
 
+  const clearAll = useCallback(() => onChange([]), [onChange]);
+
+  useEffect(() => {
+    if (autoFocus) {
+      const t = setTimeout(() => inputRef.current?.focus(), 50);
+      return () => clearTimeout(t);
+    }
+  }, [autoFocus]);
+
+  return (
+    <>
+      {/* Search + domain filter */}
+      <div className="flex items-center gap-2 border-b px-3 py-2">
+        <SearchIcon className="size-3.5 shrink-0 text-muted-foreground" />
+        <input
+          ref={inputRef}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search databases…"
+          className="flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
+        />
+        <div className="flex items-center gap-0.5 rounded-md bg-muted p-0.5">
+          {(["all", "science", "finance"] as const).map((d) => (
+            <button
+              key={d}
+              onClick={() => setActiveDomain(d)}
+              className={cn(
+                "rounded px-2 py-0.5 text-[10px] font-medium capitalize transition-colors",
+                activeDomain === d
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {d}
+            </button>
+          ))}
+        </div>
+        {selected.length > 0 && (
+          <button
+            onClick={clearAll}
+            className="text-[10px] text-muted-foreground hover:text-destructive transition-colors whitespace-nowrap"
+          >
+            Clear all
+          </button>
+        )}
+      </div>
+
+      {/* Results */}
+      <div className="max-h-72 overflow-y-auto py-1">
+        {grouped.size === 0 ? (
+          <div className="py-8 text-center text-xs text-muted-foreground">No databases found</div>
+        ) : (
+          Array.from(grouped.entries()).map(([category, dbs]) => (
+            <div key={category}>
+              <div className="sticky top-0 bg-background/95 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground backdrop-blur-sm">
+                {category}
+                <span className="ml-1.5 font-normal normal-case text-muted-foreground/60">
+                  {dbs.length}
+                </span>
+              </div>
+              {dbs.map((db) => {
+                const isSelected = selectedIds.has(db.id);
+                return (
+                  <div
+                    key={db.id}
+                    onClick={() => toggle(db)}
+                    className={cn(
+                      "flex cursor-pointer items-start gap-2.5 px-3 py-2 text-xs transition-colors hover:bg-muted/60",
+                      isSelected && "bg-muted/40"
+                    )}
+                  >
+                    <div
+                      className={cn(
+                        "mt-0.5 flex size-3.5 shrink-0 items-center justify-center rounded border transition-colors",
+                        isSelected
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border bg-background"
+                      )}
+                    >
+                      {isSelected && <CheckIcon className="size-2.5" />}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <DomainDot domain={db.domain} />
+                        <span className="font-medium text-foreground truncate">{db.name}</span>
+                      </div>
+                      <p className="mt-0.5 truncate text-muted-foreground/80">{db.description}</p>
+                    </div>
+                    <a
+                      href={db.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="mt-0.5 shrink-0 text-[10px] text-muted-foreground/50 hover:text-primary transition-colors"
+                      title={db.url}
+                    >
+                      API ↗
+                    </a>
+                  </div>
+                );
+              })}
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Footer */}
+      <div className="flex items-center justify-between border-t px-3 py-1.5">
+        <span className="text-[10px] text-muted-foreground">
+          <span className="inline-flex items-center gap-1">
+            <DomainDot domain="science" /> Science
+          </span>
+          <span className="mx-2 text-border">·</span>
+          <span className="inline-flex items-center gap-1">
+            <DomainDot domain="finance" /> Finance
+          </span>
+        </span>
+        <span className="text-[10px] text-muted-foreground">
+          {filtered.length} of {ALL_DATABASES.length} databases
+        </span>
+      </div>
+    </>
+  );
+}
+
+export function DatabaseSelector({
+  selected,
+  onChange,
+}: {
+  selected: Database[];
+  onChange: (dbs: Database[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
   const removeSelected = useCallback(
     (id: string, e: React.MouseEvent) => {
       e.stopPropagation();
@@ -106,13 +245,8 @@ export function DatabaseSelector({
     [onChange]
   );
 
-  const handleOpenChange = (next: boolean) => {
-    setOpen(next);
-    if (next) setTimeout(() => inputRef.current?.focus(), 50);
-  };
-
   return (
-    <Popover open={open} onOpenChange={handleOpenChange}>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         {/* Trigger row */}
         <div
@@ -182,7 +316,6 @@ export function DatabaseSelector({
         </div>
       </PopoverTrigger>
 
-      {/* Dropdown panel — rendered in a portal, escapes overflow:hidden ancestors */}
       <PopoverContent
         side="top"
         align="start"
@@ -190,118 +323,7 @@ export function DatabaseSelector({
         className="w-[480px] max-w-[calc(100vw-2rem)] p-0 overflow-hidden rounded-xl shadow-xl"
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
-        {/* Search + domain filter */}
-        <div className="flex items-center gap-2 border-b px-3 py-2">
-          <SearchIcon className="size-3.5 shrink-0 text-muted-foreground" />
-          <input
-            ref={inputRef}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search databases…"
-            className="flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
-          />
-          {/* Domain tabs */}
-          <div className="flex items-center gap-0.5 rounded-md bg-muted p-0.5">
-            {(["all", "science", "finance"] as const).map((d) => (
-              <button
-                key={d}
-                onClick={() => setActiveDomain(d)}
-                className={cn(
-                  "rounded px-2 py-0.5 text-[10px] font-medium capitalize transition-colors",
-                  activeDomain === d
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {d}
-              </button>
-            ))}
-          </div>
-          {selected.length > 0 && (
-            <button
-              onClick={clearAll}
-              className="text-[10px] text-muted-foreground hover:text-destructive transition-colors whitespace-nowrap"
-            >
-              Clear all
-            </button>
-          )}
-        </div>
-
-        {/* Results */}
-        <div className="max-h-72 overflow-y-auto py-1">
-          {grouped.size === 0 ? (
-            <div className="py-8 text-center text-xs text-muted-foreground">No databases found</div>
-          ) : (
-            Array.from(grouped.entries()).map(([category, dbs]) => (
-              <div key={category}>
-                <div className="sticky top-0 bg-background/95 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground backdrop-blur-sm">
-                  {category}
-                  <span className="ml-1.5 font-normal normal-case text-muted-foreground/60">
-                    {dbs.length}
-                  </span>
-                </div>
-                {dbs.map((db) => {
-                  const isSelected = selectedIds.has(db.id);
-                  return (
-                    <div
-                      key={db.id}
-                      onClick={() => toggle(db)}
-                      className={cn(
-                        "flex cursor-pointer items-start gap-2.5 px-3 py-2 text-xs transition-colors hover:bg-muted/60",
-                        isSelected && "bg-muted/40"
-                      )}
-                    >
-                      {/* Checkbox */}
-                      <div
-                        className={cn(
-                          "mt-0.5 flex size-3.5 shrink-0 items-center justify-center rounded border transition-colors",
-                          isSelected
-                            ? "border-primary bg-primary text-primary-foreground"
-                            : "border-border bg-background"
-                        )}
-                      >
-                        {isSelected && <CheckIcon className="size-2.5" />}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                          <DomainDot domain={db.domain} />
-                          <span className="font-medium text-foreground truncate">{db.name}</span>
-                        </div>
-                        <p className="mt-0.5 truncate text-muted-foreground/80">{db.description}</p>
-                      </div>
-                      <a
-                        href={db.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="mt-0.5 shrink-0 text-[10px] text-muted-foreground/50 hover:text-primary transition-colors"
-                        title={db.url}
-                      >
-                        API ↗
-                      </a>
-                    </div>
-                  );
-                })}
-              </div>
-            ))
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-between border-t px-3 py-1.5">
-          <span className="text-[10px] text-muted-foreground">
-            <span className="inline-flex items-center gap-1">
-              <DomainDot domain="science" /> Science
-            </span>
-            <span className="mx-2 text-border">·</span>
-            <span className="inline-flex items-center gap-1">
-              <DomainDot domain="finance" /> Finance
-            </span>
-          </span>
-          <span className="text-[10px] text-muted-foreground">
-            {filtered.length} of {ALL_DATABASES.length} databases
-          </span>
-        </div>
+        <DatabasePickerBody selected={selected} onChange={onChange} autoFocus={open} />
       </PopoverContent>
     </Popover>
   );
