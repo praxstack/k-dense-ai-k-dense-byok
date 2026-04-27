@@ -474,13 +474,18 @@ def _find_sibling_skills_dir(exclude_id: str | None = None) -> Optional[Path]:
     return None
 
 
-def seed_project_skills(paths: ProjectPaths) -> None:
+def seed_project_skills(paths: ProjectPaths, *, allow_remote: bool = True) -> None:
     """Populate ``<project>/sandbox/.gemini/skills`` so the expert can use them.
 
     Fast path: copy every skill from a sibling project that already has the
     catalogue. Slow path (no siblings): git-clone the scientific-skills repo.
     Network failures are logged but never raised - a project without skills
     is still usable, just with a reduced expert catalogue.
+
+    Pass ``allow_remote=False`` to skip the GitHub fallback. The synchronous
+    POST /projects bootstrap uses that flag so the response time stays
+    bounded (a sibling copy is local I/O; a clone is a multi-second network
+    round trip).
     """
     skills_dir = paths.gemini_settings_dir / "skills"
     if skills_dir.is_dir():
@@ -514,6 +519,12 @@ def seed_project_skills(paths: ProjectPaths) -> None:
         if copied:
             print(f"Seeded {copied} skills for {paths.id} from {source}")
             return
+
+    if not allow_remote:
+        # Caller is on a latency-sensitive path (e.g. POST /projects). Leave
+        # the empty skills/ directory in place; the background bootstrap or
+        # a later /sandbox/init will fill it in.
+        return
 
     # No sibling catalogue to copy from: fall back to GitHub.
     from .utils import download_scientific_skills
@@ -552,6 +563,7 @@ def init_project_sandbox(
     *,
     sync_venv: bool = True,
     download_skills: bool = True,
+    allow_remote_skills: bool = True,
 ) -> ProjectPaths:
     """Lay down the sandbox skeleton for a project.
 
@@ -559,6 +571,11 @@ def init_project_sandbox(
     of the sandbox. Copies the baseline ``GEMINI.md``, writes merged MCP
     settings, seeds ``pyproject.toml``, and optionally runs ``uv sync`` +
     fetches the scientific skills catalogue.
+
+    ``allow_remote_skills=False`` makes ``seed_project_skills`` skip its
+    GitHub fallback so the synchronous POST /projects path can run this
+    function without a multi-second network round trip when no sibling
+    catalogue is available.
     """
     # Local imports avoid a circular import with gemini_settings / utils, both
     # of which import from this module to resolve paths.
@@ -592,7 +609,7 @@ def init_project_sandbox(
             print(f"  warning: uv sync failed for {project_id}: {exc}")
 
     if download_skills:
-        seed_project_skills(paths)
+        seed_project_skills(paths, allow_remote=allow_remote_skills)
 
     return paths
 

@@ -199,6 +199,48 @@ def test_ensure_project_exists_invalid_id(tmp_projects_root: Path):
 
 
 # ---------------------------------------------------------------------------
+# seed_project_skills
+# ---------------------------------------------------------------------------
+
+
+def test_seed_project_skills_copies_from_sibling(tmp_projects_root: Path):
+    # Seed a sibling with one skill on disk.
+    sib = projects_module.resolve_paths("sib")
+    sib.sandbox.mkdir(parents=True)
+    skill = sib.gemini_settings_dir / "skills" / "skill-a"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("---\nname: skill-a\n---\n", encoding="utf-8")
+
+    target = projects_module.resolve_paths("target")
+    target.sandbox.mkdir(parents=True)
+
+    projects_module.seed_project_skills(target)
+
+    copied = target.gemini_settings_dir / "skills" / "skill-a" / "SKILL.md"
+    assert copied.is_file()
+
+
+def test_seed_project_skills_no_remote_falls_through_when_no_sibling(
+    tmp_projects_root: Path, monkeypatch
+):
+    """``allow_remote=False`` must NOT trigger the GitHub clone fallback."""
+    target = projects_module.resolve_paths("solo")
+    target.sandbox.mkdir(parents=True)
+
+    from kady_agent import utils as utils_module
+
+    def _boom(*_a, **_kw):
+        raise AssertionError("download_scientific_skills should not be called")
+
+    monkeypatch.setattr(utils_module, "download_scientific_skills", _boom)
+
+    projects_module.seed_project_skills(target, allow_remote=False)
+    # Skills dir is created (so subsequent calls can detect it) but stays empty.
+    assert target.gemini_settings_dir.joinpath("skills").is_dir()
+    assert not any(target.gemini_settings_dir.joinpath("skills").iterdir())
+
+
+# ---------------------------------------------------------------------------
 # migrate_legacy_layout
 # ---------------------------------------------------------------------------
 

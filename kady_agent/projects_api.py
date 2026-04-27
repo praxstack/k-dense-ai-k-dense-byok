@@ -30,15 +30,42 @@ from .projects import (
 logger = logging.getLogger(__name__)
 
 
+def _bootstrap_sandbox_sync(project_id: str) -> None:
+    """Run the lightweight, synchronous half of the sandbox bootstrap.
+
+    Copies ``GEMINI.md``, writes merged MCP settings, seeds ``pyproject.toml``
+    in the sandbox, and copies the scientific-skills catalogue from any
+    sibling project that already has it. The GitHub fallback is suppressed
+    here so POST /projects stays fast even when no sibling exists - the
+    background task picks that case up.
+
+    Doing this work synchronously protects against ``uvicorn --reload`` (or
+    any other process restart) killing the background task before skills
+    are seeded, which previously left ``sandbox/.gemini/skills`` empty for
+    newly created projects.
+    """
+    try:
+        init_project_sandbox(
+            project_id,
+            sync_venv=False,
+            download_skills=True,
+            allow_remote_skills=False,
+        )
+    except Exception:
+        logger.exception(
+            "Synchronous sandbox bootstrap failed for project %s", project_id
+        )
+
+
 def _bootstrap_sandbox_bg(
     project_id: str, *, sync_venv: bool = True, download_skills: bool = True
 ) -> None:
     """Run the heavy sandbox bootstrap, swallowing errors into the log.
 
     Executed via FastAPI ``BackgroundTasks`` so ``POST /projects`` can return
-    the new project record immediately while ``uv sync`` and the skills
-    download run out-of-band. Any exception is logged but never re-raised -
-    the task has already detached from the request.
+    the new project record immediately while ``uv sync`` and the GitHub
+    skills fallback run out-of-band. Any exception is logged but never
+    re-raised - the task has already detached from the request.
     """
     try:
         init_project_sandbox(
@@ -103,6 +130,11 @@ def post_project(body: ProjectCreateBody, background_tasks: BackgroundTasks):
     # Touch the on-disk skeleton so subsequent GET /sandbox/tree etc. work
     # without requiring an explicit init call.
     ensure_project_exists(meta.id)
+    # Run the lightweight bootstrap (GEMINI.md, settings, pyproject, sibling
+    # skill copy) inline so those artefacts are guaranteed to land before
+    # the request returns. The slow ``uv sync`` (and the GitHub skill
+    # fallback if no sibling existed) stays in the background task.
+    _bootstrap_sandbox_sync(meta.id)
     background_tasks.add_task(_bootstrap_sandbox_bg, meta.id)
     return meta.to_dict()
 

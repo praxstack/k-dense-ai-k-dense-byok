@@ -283,9 +283,11 @@ async def test_revise_markdown_requires_selection(asgi_client):
 
 
 async def test_projects_crud_roundtrip(asgi_client, monkeypatch):
-    # Stub the background bootstrap so the test doesn't actually uv-sync.
+    # Stub both the synchronous and background bootstrap so the test doesn't
+    # actually uv-sync, write GEMINI.md from the repo, or copy skills.
     from kady_agent import projects_api as papi
 
+    monkeypatch.setattr(papi, "_bootstrap_sandbox_sync", lambda *a, **kw: None)
     monkeypatch.setattr(papi, "_bootstrap_sandbox_bg", lambda *a, **kw: None)
 
     # List initial state
@@ -327,6 +329,7 @@ async def test_projects_crud_roundtrip(asgi_client, monkeypatch):
 async def test_project_cannot_delete_default(asgi_client, monkeypatch):
     from kady_agent import projects_api as papi
 
+    monkeypatch.setattr(papi, "_bootstrap_sandbox_sync", lambda *a, **kw: None)
     monkeypatch.setattr(papi, "_bootstrap_sandbox_bg", lambda *a, **kw: None)
 
     # Create default.
@@ -338,11 +341,54 @@ async def test_project_cannot_delete_default(asgi_client, monkeypatch):
 async def test_project_create_rejects_duplicate(asgi_client, monkeypatch):
     from kady_agent import projects_api as papi
 
+    monkeypatch.setattr(papi, "_bootstrap_sandbox_sync", lambda *a, **kw: None)
     monkeypatch.setattr(papi, "_bootstrap_sandbox_bg", lambda *a, **kw: None)
 
     await asgi_client.post("/projects", json={"name": "x", "id": "dup-proj"})
     resp = await asgi_client.post("/projects", json={"name": "x", "id": "dup-proj"})
     assert resp.status_code == 400
+
+
+async def test_post_project_seeds_skills_synchronously_from_sibling(
+    asgi_client, monkeypatch, tmp_projects_root
+):
+    """POST /projects must populate sandbox/.gemini/skills before returning.
+
+    Regression test: previously the skill catalogue was seeded only by a
+    FastAPI BackgroundTask, so a uvicorn --reload during the heavy
+    bootstrap left newly created projects without any skills. The fix
+    moves the sibling-copy fast path into the synchronous half of the
+    handler.
+    """
+    from kady_agent import projects as projects_module
+    from kady_agent import projects_api as papi
+
+    # Block the slow background half - we only care that the sync path
+    # actually copied skills into the new project's .gemini/skills dir.
+    monkeypatch.setattr(papi, "_bootstrap_sandbox_bg", lambda *a, **kw: None)
+
+    # Seed a sibling project with one fake skill so the sibling-copy fast
+    # path has something to copy. We bypass the API for the sibling and
+    # write the skill directly to keep the test focused.
+    projects_module.create_project(name="sibling", project_id="sib-src")
+    sibling_paths = projects_module.resolve_paths("sib-src")
+    fake_skill = sibling_paths.gemini_settings_dir / "skills" / "fake-skill"
+    fake_skill.mkdir(parents=True)
+    (fake_skill / "SKILL.md").write_text(
+        "---\nname: fake-skill\ndescription: test\n---\n", encoding="utf-8"
+    )
+
+    resp = await asgi_client.post(
+        "/projects", json={"name": "Target", "id": "target-proj"}
+    )
+    assert resp.status_code == 201
+
+    target_paths = projects_module.resolve_paths("target-proj")
+    copied = target_paths.gemini_settings_dir / "skills" / "fake-skill" / "SKILL.md"
+    assert copied.is_file(), (
+        "Expected POST /projects to synchronously seed skills from a sibling "
+        "project so the catalogue survives a uvicorn reload."
+    )
 
 
 async def test_verify_citations_endpoint_rejects_bad_body(asgi_client):
